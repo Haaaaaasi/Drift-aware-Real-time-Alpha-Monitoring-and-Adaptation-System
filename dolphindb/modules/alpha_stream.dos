@@ -1,0 +1,60 @@
+// DARAMS — Streaming Alpha Computation Module
+// Uses DolphinDB streamEngineParser for real-time alpha computation.
+
+use wq101alpha
+
+/**
+ * setupAlphaStreamEngine: Build a streaming engine pipeline for real-time alpha.
+ *
+ * @param alphaMetrics  — list of WQAlpha functions to compute
+ * @param inputStream   — name of the input stream table
+ * @param outputStream  — name of the output stream table
+ */
+def setupAlphaStreamEngine(alphaMetrics, inputStream, outputStream) {
+    // Define input schema matching standardized_stream
+    inputSchema = table(
+        1:0,
+        `security_id`tradetime`open`high`low`close`vol`vwap`cap`indclass,
+        [SYMBOL, TIMESTAMP, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, INT]
+    )
+
+    outputTable = objByName(outputStream)
+
+    // streamEngineParser decomposes complex alpha expressions into a DAG
+    // of streaming engines (ReactiveStateEngine, TimeSeriesEngine, etc.)
+    engine = streamEngineParser(
+        name="darams_alpha_stream",
+        metrics=alphaMetrics,
+        dummyTable=inputSchema,
+        outputTable=outputTable,
+        keyColumn=`security_id,
+        timeColumn=`tradetime
+    )
+
+    subscribeTable(
+        tableName=inputStream,
+        actionName="darams_alpha_calc",
+        offset=-1,
+        handler=append!{engine},
+        msgAsTable=true,
+        batchSize=100,
+        throttle=1
+    )
+
+    print("Alpha stream engine created and subscribed to " + inputStream)
+    return engine
+}
+
+/**
+ * setupMVPAlphaStream: Convenience function for MVP v1 alphas.
+ */
+def setupMVPAlphaStream() {
+    // MVP v1: price/volume-only alphas
+    metrics = <[WQAlpha1, WQAlpha2, WQAlpha3, WQAlpha4, WQAlpha6,
+                WQAlpha8, WQAlpha9, WQAlpha12, WQAlpha14, WQAlpha18,
+                WQAlpha20, WQAlpha23, WQAlpha26, WQAlpha28, WQAlpha41]>
+
+    return setupAlphaStreamEngine(metrics, "standardized_stream", "alpha_output_stream")
+}
+
+print("alpha_stream module loaded")

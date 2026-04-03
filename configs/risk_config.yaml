@@ -1,0 +1,18 @@
+# Risk Configuration — DARAMS
+
+constraints:
+  max_position_weight: 0.10     # 10% per position
+  max_gross_exposure: 1.0       # 100% gross exposure
+  max_turnover: 1.0             # 100% turnover per rebalance
+  max_drawdown_halt: 0.20       # halt at 20% drawdown
+  min_daily_volume: 0           # minimum daily volume filter (0 = disabled)
+
+portfolio:
+  construction_method: equal_weight_topk
+  top_k: 10
+  long_only: true
+
+execution:
+  initial_capital: 10000000.0   # 10M TWD
+  slippage_bps: 5.0
+  commission_rate: 0.001425     # TWSE standard

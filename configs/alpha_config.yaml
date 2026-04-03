@@ -1,0 +1,36 @@
+# Alpha Configuration — DARAMS
+# Controls which alphas to compute and their parameters.
+
+mvp_v1_alphas:
+  - wq001
+  - wq002
+  - wq003
+  - wq004
+  - wq006
+  - wq008
+  - wq009
+  - wq012
+  - wq014
+  - wq018
+  - wq020
+  - wq023
+  - wq026
+  - wq028
+  - wq041
+
+mvp_v2_alphas:
+  - wq048
+  - wq056
+  - wq058
+  - wq071
+  - wq082
+
+alpha_computation:
+  bar_type: daily
+  lookback_buffer_days: 252
+  nan_threshold: 0.30       # drop alpha if NaN rate > 30%
+
+ic_weighting:
+  lookback_window: 60       # rolling window for IC calculation
+  min_ic: 0.0               # minimum IC to include in composite
+  winsorize_sigma: 3.0      # z-score winsorization threshold

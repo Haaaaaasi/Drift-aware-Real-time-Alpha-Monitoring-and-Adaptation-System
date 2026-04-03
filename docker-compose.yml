@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  dolphindb:
+    image: dolphindb/dolphindb:v2.00.11
+    container_name: darams-dolphindb
+    ports:
+      - "8848:8848"
+    volumes:
+      - dolphindb_data:/data
+      - ./dolphindb/scripts:/scripts
+      - ./dolphindb/modules:/modules
+    environment:
+      - MAX_MEM_SIZE=4
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: darams-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: darams
+      POSTGRES_USER: darams
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-darams_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: darams-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: darams-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  dolphindb_data:
+  postgres_data:
+  redis_data:
+  grafana_data:

@@ -1,0 +1,55 @@
+# Monitoring Configuration — DARAMS
+
+data_monitor:
+  missing_ratio:
+    warning: 0.05
+    critical: 0.15
+  abnormal_value_ratio:
+    warning: 0.01
+    critical: 0.05
+  stale_price_streak:
+    warning: 5
+    critical: 10
+  price_sigma_threshold: 10.0
+  feature_dist_shift:
+    warning_pvalue: 0.05
+    critical_pvalue: 0.01
+
+alpha_monitor:
+  rolling_window: 20
+  ic:
+    warning: 0.02
+    critical: 0.0
+  turnover:
+    warning: 0.80
+    critical: 0.95
+  correlation_drift:
+    warning: 0.2
+    critical: 0.4
+
+model_monitor:
+  rolling_window: 20
+  directional_accuracy:
+    warning: 0.52
+    critical: 0.48
+  prediction_dist_drift:
+    warning_pvalue: 0.05
+    critical_pvalue: 0.01
+  calibration_ece:
+    warning: 0.10
+    critical: 0.20
+
+strategy_monitor:
+  sharpe:
+    window: 60
+    warning: 0.5
+    critical: 0.0
+  max_drawdown:
+    warning: 0.10
+    critical: 0.20
+  realized_vs_expected:
+    warning: 0.5
+    critical: 0.2
+  turnover:
+    warning: 1.0
+    critical: 2.0

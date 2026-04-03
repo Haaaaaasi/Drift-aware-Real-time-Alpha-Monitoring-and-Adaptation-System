@@ -1,0 +1,13 @@
+// DARAMS — Setup streaming engine for real-time alpha computation.
+// Run after setup_database.dos and load_wq101alpha.dos.
+
+// Load the streaming module
+run "/modules/alpha_stream.dos"
+
+// Setup the MVP streaming engine
+engine = setupMVPAlphaStream()
+
+print("=== Streaming engine setup complete ===")
+print("Subscribed to: standardized_stream")
+print("Output to: alpha_output_stream")
+print("Alphas: WQAlpha1, 2, 3, 4, 6, 8, 9, 12, 14, 18, 20, 23, 26, 28, 41")

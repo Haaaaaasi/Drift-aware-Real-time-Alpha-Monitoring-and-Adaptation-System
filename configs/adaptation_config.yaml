@@ -1,0 +1,28 @@
+# Adaptation Configuration — DARAMS
+
+policy_1_scheduled:
+  enabled: true
+  retrain_interval_days: 7      # retrain every Friday
+  retrain_day_of_week: 4        # 0=Mon, 4=Fri
+
+policy_2_performance_triggered:
+  enabled: true
+  ic_threshold: 0.0
+  ic_consecutive_days: 5
+  sharpe_threshold: 0.0
+  sharpe_consecutive_days: 10
+  critical_alert_limit: 3
+
+policy_3_recurring_concept:
+  enabled: false                 # MVP v3
+  similarity_threshold: 0.80
+  min_pool_size: 5
+  shadow_evaluation_days: 2
+
+shadow_mode:
+  min_improvement_ic: 0.005
+  min_evaluation_days: 5
+
+model_registry:
+  max_shadow_models: 5
+  auto_retire_days: 90

@@ -1,0 +1,26 @@
+// DARAMS — Load WorldQuant 101 Alpha Module
+// Prerequisite: wq101alpha and prepare101 modules must be installed in DolphinDB.
+// See: https://github.com/dolphindb/DolphinDBModules
+
+use wq101alpha
+use prepare101
+
+print("wq101alpha and prepare101 modules loaded successfully")
+
+// Verify by computing a trivial alpha on dummy data
+dummy = table(
+    take(`TEST, 100) as security_id,
+    2024.01.01 + 0..99 as tradetime,
+    rand(100.0, 100) as open,
+    rand(100.0, 100) as high,
+    rand(100.0, 100) as low,
+    rand(100.0, 100) as close,
+    rand(1000000.0, 100) as vol,
+    rand(100.0, 100) as vwap,
+    rand(1000000000.0, 100) as cap,
+    take(1 2 3 4 5, 100) as indclass
+)
+
+prepared = prepareData(dummy)
+result = WQAlpha1(prepared)
+print("Verification: WQAlpha1 computed " + string(size(result)) + " rows on dummy data")

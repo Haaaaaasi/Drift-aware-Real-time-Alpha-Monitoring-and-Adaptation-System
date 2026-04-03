@@ -1,0 +1,23 @@
+# Pipeline Configuration — DARAMS
+
+daily_batch:
+  schedule: "0 16 * * 1-5"     # 4pm weekdays (after TWSE close)
+  bar_type: daily
+  universe: top_50              # top 50 by market cap
+  label_horizons: [1, 5, 10, 20]
+
+monitoring:
+  schedule: "30 16 * * 1-5"    # 4:30pm weekdays
+  run_data_monitor: true
+  run_alpha_monitor: true
+  run_model_monitor: true
+  run_strategy_monitor: true
+
+adaptation:
+  schedule: "0 17 * * 5"       # 5pm Fridays
+  policy: scheduled             # scheduled / performance_triggered / recurring_concept
+
+label_update:
+  schedule: "0 17 * * 1-5"     # 5pm weekdays
+  horizons: [1, 5, 10, 20]
+  buffer_bars: 1

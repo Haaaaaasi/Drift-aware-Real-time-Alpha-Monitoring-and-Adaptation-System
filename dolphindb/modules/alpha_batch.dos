@@ -1,0 +1,104 @@
+// DARAMS — Batch Alpha Computation Module
+// Computes selected WQAlpha factors on historical standardized_bars.
+
+use wq101alpha
+use prepare101
+
+/**
+ * computeBatchAlphas: Compute a set of WQAlpha factors for a date range.
+ *
+ * @param startDate DATE  — start of computation window
+ * @param endDate   DATE  — end of computation window
+ * @param alphaIds  VECTOR<INT> — list of alpha numbers to compute, e.g. [1, 2, 3, 6]
+ * @return TABLE with columns: security_id, tradetime, alpha_id, alpha_value
+ */
+def computeBatchAlphas(startDate, endDate, alphaIds) {
+    // Load standardized bars with lookback buffer (252 trading days)
+    bufferStart = temporalAdd(startDate, -252, "d")
+
+    bars = loadTable("dfs://darams_market", "standardized_bars")
+    rawData = select * from bars
+        where tradetime between timestamp(bufferStart) : timestamp(endDate)
+        and bar_type = "daily"
+        and is_tradable = true
+
+    if (size(rawData) == 0) {
+        print("WARNING: No data found for range " + string(startDate) + " to " + string(endDate))
+        return table(1:0, `security_id`tradetime`alpha_id`alpha_value, [SYMBOL, TIMESTAMP, SYMBOL, DOUBLE])
+    }
+
+    inputData = prepareData(rawData)
+
+    results = table(1:0, `security_id`tradetime`alpha_id`alpha_value, [SYMBOL, TIMESTAMP, SYMBOL, DOUBLE])
+
+    // Dynamically dispatch alpha computation
+    alphaFuncMap = dict(INT, ANY)
+    alphaFuncMap[1]  = WQAlpha1
+    alphaFuncMap[2]  = WQAlpha2
+    alphaFuncMap[3]  = WQAlpha3
+    alphaFuncMap[4]  = WQAlpha4
+    alphaFuncMap[6]  = WQAlpha6
+    alphaFuncMap[8]  = WQAlpha8
+    alphaFuncMap[9]  = WQAlpha9
+    alphaFuncMap[12] = WQAlpha12
+    alphaFuncMap[14] = WQAlpha14
+    alphaFuncMap[18] = WQAlpha18
+    alphaFuncMap[20] = WQAlpha20
+    alphaFuncMap[23] = WQAlpha23
+    alphaFuncMap[26] = WQAlpha26
+    alphaFuncMap[28] = WQAlpha28
+    alphaFuncMap[41] = WQAlpha41
+
+    for (aid in alphaIds) {
+        if (aid in alphaFuncMap.keys()) {
+            alphaFunc = alphaFuncMap[aid]
+            try {
+                raw = alphaFunc(inputData)
+                // raw is a table/vector; reshape into long format
+                alphaName = "wq" + lpad(string(aid), 3, "0")
+                t = select
+                    security_id,
+                    tradetime,
+                    alphaName as alpha_id,
+                    raw as alpha_value
+                from inputData
+                where tradetime >= timestamp(startDate)
+
+                results.append!(t)
+                print("Computed " + alphaName + ": " + string(size(t)) + " rows")
+            } catch(ex) {
+                print("ERROR computing WQAlpha" + string(aid) + ": " + ex)
+            }
+        } else {
+            print("WARNING: WQAlpha" + string(aid) + " not in dispatch map, skipping")
+        }
+    }
+
+    return results
+}
+
+/**
+ * saveAlphaFeatures: Persist computed alpha features to DolphinDB partitioned table.
+ */
+def saveAlphaFeatures(alphaTable, versionId) {
+    if (size(alphaTable) == 0) {
+        print("No alpha features to save")
+        return
+    }
+
+    t = select
+        security_id,
+        tradetime,
+        "daily" as bar_type,
+        alpha_id,
+        alpha_value,
+        versionId as alpha_version_id,
+        now() as computed_at
+    from alphaTable
+
+    db = loadTable("dfs://darams_alpha", "alpha_features")
+    db.append!(t)
+    print("Saved " + string(size(t)) + " alpha feature rows, version=" + versionId)
+}
+
+print("alpha_batch module loaded")

@@ -1,0 +1,43 @@
+// DARAMS — DolphinDB Standardization Module
+// Transforms raw data into the format expected by wq101alpha prepareData.
+
+/**
+ * standardizeRawBars: Map raw OHLCV data columns to wq101alpha-compatible schema.
+ *
+ * Expected input columns: symbol, datetime, open, high, low, close, volume, vwap
+ * Output columns: securityid, tradetime, open, high, low, close, vol, vwap, cap, indclass
+ */
+def standardizeRawBars(rawTable, secMasterTable) {
+    // Join with security master for industry and cap info
+    result = select
+        rawTable.symbol as security_id,
+        rawTable.datetime as tradetime,
+        "daily" as bar_type,
+        rawTable.open,
+        rawTable.high,
+        rawTable.low,
+        rawTable.close,
+        rawTable.volume as vol,
+        rawTable.vwap,
+        iif(isNull(secMasterTable.cap), rawTable.close * 1000000, secMasterTable.cap) as cap,
+        iif(isNull(secMasterTable.industry_code), 0, secMasterTable.industry_code) as indclass,
+        true as is_tradable,
+        0 as missing_flags
+    from rawTable
+    left join secMasterTable on rawTable.symbol = secMasterTable.security_id
+
+    // Mark invalid bars
+    update result set is_tradable = false where vol <= 0 or isNull(close)
+
+    // Mark missing fields
+    update result set missing_flags = missing_flags + 1 where isNull(vwap)
+    update result set missing_flags = missing_flags + 2 where isNull(cap) or cap <= 0
+    update result set missing_flags = missing_flags + 4 where isNull(indclass) or indclass <= 0
+
+    // Fill missing vwap with (high + low + close) / 3 as fallback
+    update result set vwap = (high + low + close) / 3.0 where isNull(vwap)
+
+    return result
+}
+
+print("standardization module loaded")

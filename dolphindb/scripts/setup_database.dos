@@ -1,0 +1,81 @@
+// DARAMS — DolphinDB Database & Table Setup
+// Run this script once to create the partitioned databases and tables.
+
+// ============================================================
+// 1. Create database for standardized market bars
+// ============================================================
+if (existsDatabase("dfs://darams_market")) {
+    dropDatabase("dfs://darams_market")
+}
+
+db_date = database("", VALUE, 2020.01.01..2030.12.31)
+db_sym  = database("", HASH, [SYMBOL, 50])
+db = database("dfs://darams_market", COMPO, [db_date, db_sym],, "TSDB")
+
+schema_bars = table(
+    1:0,
+    `security_id`tradetime`bar_type`open`high`low`close`vol`vwap`cap`indclass`is_tradable`missing_flags,
+    [SYMBOL, TIMESTAMP, SYMBOL, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, INT, BOOL, INT]
+)
+
+createPartitionedTable(
+    dbHandle=db,
+    table=schema_bars,
+    tableName="standardized_bars",
+    partitionColumns=`tradetime`security_id,
+    sortColumns=`security_id`tradetime,
+    keepDuplicates=LAST
+)
+
+print("Created dfs://darams_market/standardized_bars")
+
+// ============================================================
+// 2. Create database for alpha features
+// ============================================================
+if (existsDatabase("dfs://darams_alpha")) {
+    dropDatabase("dfs://darams_alpha")
+}
+
+db_date2 = database("", VALUE, 2020.01.01..2030.12.31)
+db_sym2  = database("", HASH, [SYMBOL, 50])
+db_alpha = database("dfs://darams_alpha", COMPO, [db_date2, db_sym2],, "TSDB")
+
+schema_alpha = table(
+    1:0,
+    `security_id`tradetime`bar_type`alpha_id`alpha_value`alpha_version_id`computed_at,
+    [SYMBOL, TIMESTAMP, SYMBOL, SYMBOL, DOUBLE, SYMBOL, TIMESTAMP]
+)
+
+createPartitionedTable(
+    dbHandle=db_alpha,
+    table=schema_alpha,
+    tableName="alpha_features",
+    partitionColumns=`tradetime`security_id,
+    sortColumns=`security_id`tradetime`alpha_id,
+    keepDuplicates=LAST
+)
+
+print("Created dfs://darams_alpha/alpha_features")
+
+// ============================================================
+// 3. Create streaming tables (for online pipeline)
+// ============================================================
+colNames_stream = `security_id`tradetime`open`high`low`close`vol`vwap`cap`indclass
+colTypes_stream = [SYMBOL, TIMESTAMP, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, INT]
+
+share(
+    streamTable(100000:0, colNames_stream, colTypes_stream),
+    "standardized_stream"
+)
+print("Created shared stream table: standardized_stream")
+
+colNames_alpha_out = `security_id`tradetime`alpha_id`alpha_value
+colTypes_alpha_out = [SYMBOL, TIMESTAMP, SYMBOL, DOUBLE]
+
+share(
+    streamTable(100000:0, colNames_alpha_out, colTypes_alpha_out),
+    "alpha_output_stream"
+)
+print("Created shared stream table: alpha_output_stream")
+
+print("=== DolphinDB setup complete ===")

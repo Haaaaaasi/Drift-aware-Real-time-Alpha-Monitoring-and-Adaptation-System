@@ -1,0 +1,36 @@
+// DARAMS — Monitoring Query Utilities
+
+/**
+ * getBarCoverage: Check data completeness for a date range.
+ */
+def getBarCoverage(startDate, endDate) {
+    bars = loadTable("dfs://darams_market", "standardized_bars")
+    return select
+        tradetime.date() as trade_date,
+        count(*) as bar_count,
+        sum(iif(is_tradable, 1, 0)) as tradable_count,
+        avg(missing_flags) as avg_missing_flags
+    from bars
+    where tradetime between timestamp(startDate) : timestamp(endDate)
+    and bar_type = "daily"
+    group by tradetime.date()
+    order by trade_date
+}
+
+/**
+ * getAlphaNanRate: Compute NaN rate per alpha over a date range.
+ */
+def getAlphaNanRate(startDate, endDate) {
+    af = loadTable("dfs://darams_alpha", "alpha_features")
+    return select
+        alpha_id,
+        count(*) as total,
+        sum(iif(isNull(alpha_value), 1, 0)) as nan_count,
+        sum(iif(isNull(alpha_value), 1, 0)) * 1.0 / count(*) as nan_rate
+    from af
+    where tradetime between timestamp(startDate) : timestamp(endDate)
+    group by alpha_id
+    order by nan_rate desc
+}
+
+print("monitoring_query module loaded")

@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+
+# Data & artifacts
+data/
+artifacts/
+mlruns/
+*.csv
+*.parquet
+*.h5
+*.pkl
+*.joblib
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Grafana provisioned data
+grafana_data/
+
+# Docker volumes
+dolphindb_data/
+postgres_data/
+redis_data/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log

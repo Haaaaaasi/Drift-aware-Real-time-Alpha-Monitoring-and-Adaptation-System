@@ -1,0 +1,43 @@
+// DARAMS — DolphinDB Data Ingestion Module
+// Functions for writing standardized bars into the partitioned table.
+
+/**
+ * ingestStandardizedBars: Write a batch of standardized bars into DolphinDB.
+ *
+ * @param data TABLE — must match standardized_bars schema
+ */
+def ingestStandardizedBars(data) {
+    if (size(data) == 0) {
+        print("No data to ingest")
+        return
+    }
+
+    db = loadTable("dfs://darams_market", "standardized_bars")
+    db.append!(data)
+    print("Ingested " + string(size(data)) + " standardized bars")
+}
+
+/**
+ * ingestToStream: Push new bars into the streaming table for real-time processing.
+ *
+ * @param data TABLE — must match standardized_stream schema
+ */
+def ingestToStream(data) {
+    streamTable = objByName("standardized_stream")
+    streamTable.append!(data)
+    print("Pushed " + string(size(data)) + " bars to standardized_stream")
+}
+
+/**
+ * queryBars: Retrieve standardized bars for a date range and symbol set.
+ */
+def queryBars(symbols, startDate, endDate, barType) {
+    bars = loadTable("dfs://darams_market", "standardized_bars")
+    return select * from bars
+        where security_id in symbols
+        and tradetime between timestamp(startDate) : timestamp(endDate)
+        and bar_type = barType
+        order by security_id, tradetime
+}
+
+print("data_ingestion module loaded")

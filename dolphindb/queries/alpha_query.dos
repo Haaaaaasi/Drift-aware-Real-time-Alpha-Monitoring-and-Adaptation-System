@@ -1,0 +1,30 @@
+// DARAMS — Alpha Query Utilities
+
+/**
+ * getAlphaPanel: Retrieve alpha features as a wide panel (pivot by alpha_id).
+ */
+def getAlphaPanel(symbols, startDate, endDate, alphaIds) {
+    af = loadTable("dfs://darams_alpha", "alpha_features")
+    long_fmt = select security_id, tradetime, alpha_id, alpha_value
+        from af
+        where security_id in symbols
+        and tradetime between timestamp(startDate) : timestamp(endDate)
+        and alpha_id in alphaIds
+        order by security_id, tradetime, alpha_id
+
+    return pivot(avg(alpha_value), long_fmt, tradetime, alpha_id, security_id)
+}
+
+/**
+ * getLatestAlphas: Get the most recent alpha snapshot for all securities.
+ */
+def getLatestAlphas(alphaIds) {
+    af = loadTable("dfs://darams_alpha", "alpha_features")
+    return select security_id, alpha_id, last(alpha_value) as alpha_value,
+                  last(tradetime) as tradetime
+        from af
+        where alpha_id in alphaIds
+        group by security_id, alpha_id
+}
+
+print("alpha_query module loaded")
