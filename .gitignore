@@ -1,19 +1,51 @@
 # Python
 __pycache__/
 *.py[oc]
+*.pyc
+*.pyo
 build/
 dist/
 wheels/
 *.egg-info
 .venv
+venv/
 
 # Environment
 .env
+
+# Compiled
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.so
+*.dll
+*.dylib
+
+# Build directories
+build/
+cmake-build-*/
+bin/
+obj/
 
 # IDE
 .vscode/
 .idea/
 .cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Internal docs
+docs/superpowers/
 
 # Data & artifacts
 data/
@@ -24,10 +56,6 @@ mlruns/
 *.h5
 *.pkl
 *.joblib
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Grafana provisioned data
 grafana_data/
@@ -43,3 +71,6 @@ redis_data/
 # Logs
 logs/
 *.log
+
+# Node.js
+node_modules/
