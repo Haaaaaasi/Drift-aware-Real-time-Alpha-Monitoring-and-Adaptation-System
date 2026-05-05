@@ -41,34 +41,47 @@ class BatchAlphaComputer:
 
         version_id = f"batch_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
 
-        self._client.load_module("wq101alpha")
-        self._client.load_module("prepare101")
-
-        # Upload parameters
-        self._client.run(f'startDate = {start_date.strftime("%Y.%m.%d")}')
-        self._client.run(f'endDate = {end_date.strftime("%Y.%m.%d")}')
-        self._client.run(f"alphaIds = {alpha_ids}")
-
-        # Load and run batch module
+        # 載入並執行 alpha_batch 模組（prepare101 不存在——alpha_batch.dos 自帶 preparePanels）
         self._client.run('run "/modules/alpha_batch.dos"')
-        result = self._client.run("computeBatchAlphas(startDate, endDate, alphaIds)")
 
-        if result is None or (isinstance(result, pd.DataFrame) and result.empty):
+        # computeBatchAlphas 內部 per-alpha 直寫 alpha_features，避免一次 append 31M rows
+        # 觸發 DolphinDB 社群版 8GB OOM。回傳單列摘要表：n_rows_written / n_alphas_ok / n_alphas_failed。
+        script = (
+            f'startDate = {start_date.strftime("%Y.%m.%d")};\n'
+            f'endDate = {end_date.strftime("%Y.%m.%d")};\n'
+            f'alphaIds = {alpha_ids};\n'
+            f'versionId = "{version_id}";\n'
+            'summary = computeBatchAlphas(startDate, endDate, alphaIds, versionId);\n'
+            'summary'
+        )
+        summary_df = self._client.run(script)
+        n_rows = int(summary_df.iloc[0]["n_rows_written"]) if summary_df is not None and len(summary_df) else 0
+        n_ok = int(summary_df.iloc[0]["n_alphas_ok"]) if summary_df is not None and len(summary_df) else 0
+        n_failed = int(summary_df.iloc[0]["n_alphas_failed"]) if summary_df is not None and len(summary_df) else 0
+
+        if n_rows == 0:
             logger.warning("batch_compute_empty", start=str(start_date), end=str(end_date))
             return pd.DataFrame(columns=["security_id", "tradetime", "alpha_id", "alpha_value"])
 
-        df = result if isinstance(result, pd.DataFrame) else pd.DataFrame(result)
         logger.info(
             "batch_compute_complete",
-            rows=len(df),
+            rows=n_rows,
             alphas=len(alpha_ids),
+            alphas_ok=n_ok,
+            alphas_failed=n_failed,
             version=version_id,
         )
 
-        # Persist to DolphinDB
-        self._client.run(f'saveAlphaFeatures(result, "{version_id}")')
-
-        return df
+        # 回傳精簡摘要 DataFrame（想要完整資料請用 get_alpha_features 或直接查 alpha_features 表）
+        return pd.DataFrame({
+            "version_id": [version_id],
+            "n_rows": [n_rows],
+            "n_alphas": [len(alpha_ids)],
+            "n_alphas_ok": [n_ok],
+            "n_alphas_failed": [n_failed],
+            "start_date": [start_date],
+            "end_date": [end_date],
+        })
 
     def get_alpha_features(
         self,

@@ -19,8 +19,13 @@ logger = get_logger(__name__)
 class SignalGenerator:
     """Facade that delegates to the selected meta-signal strategy."""
 
-    def __init__(self, method: MetaSignalMethod = MetaSignalMethod.RULE_BASED) -> None:
+    def __init__(
+        self,
+        method: MetaSignalMethod = MetaSignalMethod.RULE_BASED,
+        feature_columns: list[str] | None = None,
+    ) -> None:
         self._method = method
+        self._feature_columns = feature_columns
 
     def generate(
         self,
@@ -47,17 +52,23 @@ class SignalGenerator:
 
         elif self._method == MetaSignalMethod.ML_META:
             from src.meta_signal.ml_meta_model import MLMetaModel
-            model = MLMetaModel()
-            if forward_returns is not None:
-                wide = alpha_panel.pivot_table(
-                    index=["security_id", "tradetime"],
-                    columns="alpha_id",
-                    values="alpha_value",
-                )
-                model.train(wide, forward_returns)
-                signals = model.predict(wide)
-            else:
+            if forward_returns is None:
                 raise ValueError("ML meta model requires forward_returns for training")
+            # If caller did not pre-filter alphas, restrict to effective subset.
+            panel_for_ml = alpha_panel
+            if self._feature_columns:
+                panel_for_ml = alpha_panel[
+                    alpha_panel["alpha_id"].isin(self._feature_columns)
+                ]
+            model = MLMetaModel(feature_columns=self._feature_columns)
+            wide = panel_for_ml.pivot_table(
+                index=["security_id", "tradetime"],
+                columns="alpha_id",
+                values="alpha_value",
+            )
+            train_info = model.train(wide, forward_returns)
+            signals = model.predict(wide)
+            model_version_id = model_version_id or train_info["model_id"]
 
         else:
             raise NotImplementedError(f"Method {self._method} not yet implemented")

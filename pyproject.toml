@@ -42,8 +42,12 @@ notebook = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
+
+# Hatch 預設會找與 [project].name 同名的目錄（darams/），本專案採 src layout，需明確指定。
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [tool.ruff]
 target-version = "py311"

@@ -25,6 +25,150 @@ mvp_v2_alphas:
   - wq071
   - wq082
 
+# Effective alpha subset produced by notebooks/01_alpha_ic_analysis.py
+# Selection: |rank_ic| >= 0.01 AND coverage >= 0.80 (horizon=5, 10 TW stocks,
+# 2022–2024). Ordered by |IC| descending. Used as feature pool for the
+# XGBoost meta model in WP3.
+v2_effective_alphas:
+  - wq020
+  - wq004
+  - wq028
+  - wq003
+  - wq014
+  - wq002
+  - wq018
+  - wq041
+  - wq023
+  - wq026
+
+# V3 effective alpha subset — 真實 WQ101（DolphinDB） × 556 TW stocks × 2022-2026
+# Selection: |rank_ic| >= 0.01 AND coverage >= 0.80 (horizon=5)
+# Ordered by abs(rank_ic) descending.
+#
+# ⚠️ LOOK-AHEAD BIAS WARNING（P0★ #1，2026-04-26 標註）
+# 本子集是用 2022-2026 全期 IC 篩出來，再回頭用在同一段歷史的 backtest，
+# 違反 CLAUDE.md 原則 #2「signal_time 與 label_available_at 必須分離」。
+# 任何 WP9 / WP11 數值結論若使用此子集，僅能視為「初步」，不可直接寫入論文。
+#
+# 正確作法：使用下方 v3_effective_alphas_is（IS-only 篩選），並參考
+# reports/alpha_ic_analysis/effective_alphas_oos_validation.csv 確認 OOS IC 衰減。
+v3_effective_alphas:
+  - wq040  # rank_ic=0.0372
+  - wq061  # rank_ic=0.0327
+  - wq026  # rank_ic=0.0316
+  - wq073  # rank_ic=-0.0314
+  - wq044  # rank_ic=0.0303
+  - wq014  # rank_ic=0.0283
+  - wq024  # rank_ic=0.0274
+  - wq006  # rank_ic=0.0274
+  - wq043  # rank_ic=0.0257
+  - wq064  # rank_ic=0.0255
+  - wq021  # rank_ic=0.0251
+  - wq084  # rank_ic=-0.0234
+  - wq055  # rank_ic=0.0225
+  - wq007  # rank_ic=0.0208
+  - wq071  # rank_ic=0.0200
+  - wq001  # rank_ic=-0.0195
+  - wq087  # rank_ic=-0.0194
+  - wq012  # rank_ic=0.0186
+  - wq035  # rank_ic=-0.0185
+  - wq101  # rank_ic=-0.0181
+  - wq016  # rank_ic=0.0175
+  - wq038  # rank_ic=0.0174
+  - wq041  # rank_ic=0.0159
+  - wq057  # rank_ic=0.0158
+  - wq062  # rank_ic=0.0153
+  - wq054  # rank_ic=0.0152
+  - wq009  # rank_ic=0.0151
+  - wq015  # rank_ic=0.0150
+  - wq003  # rank_ic=0.0145
+  - wq079  # rank_ic=0.0144
+  - wq013  # rank_ic=0.0143
+  - wq050  # rank_ic=0.0142
+  - wq017  # rank_ic=0.0129
+  - wq074  # rank_ic=0.0124
+  - wq042  # rank_ic=0.0122
+  - wq083  # rank_ic=0.0121
+  - wq045  # rank_ic=0.0118
+  - wq018  # rank_ic=0.0118
+  - wq023  # rank_ic=0.0113
+  - wq002  # rank_ic=0.0112
+  - wq072  # rank_ic=0.0112
+  - wq095  # rank_ic=0.0104
+  - wq099  # rank_ic=0.0103
+  - wq081  # rank_ic=0.0102
+  - wq004  # rank_ic=0.0101
+
+# V3 IS-only effective alpha subset（P0★ #1 修正版）
+# 由 scripts/run_is_oos_validation.py 於 2026-04-26 產出（後更新於 cache rebuild 完成後）
+# 資料來源：Python WQ101 cache（101 個 alpha × 200 檔台股 × 2022-01 ~ 2026-04）
+#   專案已從 DolphinDB 遷移至純 Python WQ101，見 memory/project_python_wq101_migration.md
+# Split：In-sample 2022-01-03 ~ 2024-06-30 / Out-of-sample 2024-07-01 ~ 2026-04-17
+# Selection criterion：|rank_ic_is| >= 0.01 AND coverage_is >= 0.80
+#
+# 篩選結果：101 alphas → 52 IS-selected
+#   sign-flip count: 6/52 (wq083, wq024, wq061, wq075, wq052, wq022)
+#   selected mean IS rank_ic: +0.0080
+#   selected mean OOS rank_ic: +0.0184（保留正向訊號）
+#   selected mean rank_ic_decay: +0.0104（OOS 平均比 IS 略高，反向 alpha 正向化）
+# 完整 IS/OOS IC 對照見 reports/alpha_ic_analysis/effective_alphas_oos_validation.csv
+#
+# Pipelines 實際讀取的 single source of truth：reports/alpha_ic_analysis/effective_alphas.json
+# 此 yaml 區塊為人類閱讀友善版。
+v3_effective_alphas_is:
+  - wq083  # IS rank_ic=-0.1722  OOS=+0.2665 [SIGN FLIP]
+  - wq027  # IS rank_ic=+0.0408  OOS=+0.0314
+  - wq068  # IS rank_ic=-0.0351  OOS=-0.0065
+  - wq065  # IS rank_ic=+0.0344  OOS=+0.0321
+  - wq064  # IS rank_ic=+0.0329  OOS=+0.0308
+  - wq013  # IS rank_ic=+0.0288  OOS=+0.0254
+  - wq026  # IS rank_ic=+0.0282  OOS=+0.0212
+  - wq078  # IS rank_ic=-0.0268  OOS=-0.0129
+  - wq024  # IS rank_ic=+0.0265  OOS=-0.0161 [SIGN FLIP]
+  - wq055  # IS rank_ic=+0.0263  OOS=+0.0255
+  - wq040  # IS rank_ic=+0.0260  OOS=+0.0173
+  - wq016  # IS rank_ic=+0.0254  OOS=+0.0276
+  - wq018  # IS rank_ic=+0.0245  OOS=+0.0253
+  - wq069  # IS rank_ic=-0.0233  OOS=-0.0060
+  - wq076  # IS rank_ic=-0.0227  OOS=-0.0176
+  - wq004  # IS rank_ic=+0.0215  OOS=+0.0169
+  - wq087  # IS rank_ic=+0.0214  OOS=+0.0179
+  - wq015  # IS rank_ic=+0.0213  OOS=+0.0240
+  - wq035  # IS rank_ic=+0.0212  OOS=+0.0297
+  - wq072  # IS rank_ic=+0.0212  OOS=+0.0198
+  - wq050  # IS rank_ic=+0.0208  OOS=+0.0221
+  - wq054  # IS rank_ic=+0.0207  OOS=+0.0292
+  - wq094  # IS rank_ic=+0.0206  OOS=+0.0323
+  - wq002  # IS rank_ic=+0.0206  OOS=+0.0188
+  - wq053  # IS rank_ic=+0.0204  OOS=+0.0208
+  - wq001  # IS rank_ic=+0.0174  OOS=+0.0136
+  - wq044  # IS rank_ic=+0.0170  OOS=+0.0274
+  - wq061  # IS rank_ic=+0.0167  OOS=-0.0139 [SIGN FLIP]
+  - wq095  # IS rank_ic=+0.0163  OOS=+0.0102
+  - wq038  # IS rank_ic=+0.0158  OOS=+0.0207
+  - wq101  # IS rank_ic=-0.0157  OOS=-0.0205
+  - wq019  # IS rank_ic=+0.0155  OOS=+0.0220
+  - wq066  # IS rank_ic=+0.0149  OOS=+0.0127
+  - wq009  # IS rank_ic=+0.0148  OOS=+0.0101
+  - wq075  # IS rank_ic=-0.0146  OOS=+0.0013 [SIGN FLIP]
+  - wq048  # IS rank_ic=+0.0145  OOS=+0.0212
+  - wq073  # IS rank_ic=+0.0144  OOS=+0.0222
+  - wq060  # IS rank_ic=+0.0144  OOS=+0.0268
+  - wq033  # IS rank_ic=+0.0143  OOS=+0.0186
+  - wq082  # IS rank_ic=+0.0141  OOS=+0.0121
+  - wq008  # IS rank_ic=+0.0138  OOS=+0.0244
+  - wq041  # IS rank_ic=+0.0138  OOS=+0.0216
+  - wq010  # IS rank_ic=+0.0131  OOS=+0.0148
+  - wq049  # IS rank_ic=-0.0128  OOS=-0.0161
+  - wq085  # IS rank_ic=-0.0125  OOS=-0.0148
+  - wq005  # IS rank_ic=+0.0125  OOS=+0.0286
+  - wq071  # IS rank_ic=+0.0124  OOS=+0.0176
+  - wq039  # IS rank_ic=-0.0124  OOS=-0.0028
+  - wq097  # IS rank_ic=-0.0121  OOS=-0.0010
+  - wq052  # IS rank_ic=-0.0115  OOS=+0.0204 [SIGN FLIP]
+  - wq011  # IS rank_ic=+0.0107  OOS=+0.0079
+  - wq022  # IS rank_ic=+0.0105  OOS=-0.0031 [SIGN FLIP]
+
 alpha_computation:
   bar_type: daily
   lookback_buffer_days: 252

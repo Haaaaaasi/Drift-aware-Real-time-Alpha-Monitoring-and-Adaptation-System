@@ -51,7 +51,7 @@ _ddb_session: ddb.Session | None = None
 
 def get_dolphindb() -> ddb.Session:
     global _ddb_session
-    if _ddb_session is None or not _ddb_session.isConnected:
+    if _ddb_session is None or _ddb_session.isClosed():
         _ddb_session = ddb.Session()
         _ddb_session.connect(
             _settings.dolphindb.host,

@@ -1,0 +1,24 @@
+=== 模擬摘要：sim_20220601_20241231_top10_pool_model_pool ===
+  期間            : 2022-06-01 → 2024-12-31
+  交易日數        : 631
+  Adaptation 策略 : model_pool (觸發重訓 + recurring concept pool shadow 3-way compare)
+  實際重訓次數    : 28
+  Top-K           : 10
+
+--- 績效 ---
+  累積報酬        :  -63.659 %
+  年化報酬        :  -33.252 %
+  Sharpe Ratio    :   -1.580
+  最大回撤        :  -66.305 %
+  日勝率          :    43.74 %
+  期末組合價值    :   3,634,062.18
+
+--- 組合特徵 ---
+  平均持倉數      :     9.76
+  平均週轉率      :   0.8799
+
+--- 成本拆分（bps/日，turnover-weighted） ---
+  Commission      :   15.849
+  Tax (sell-side) :   25.650
+  Slippage        :    8.558
+  Total           :   50.057

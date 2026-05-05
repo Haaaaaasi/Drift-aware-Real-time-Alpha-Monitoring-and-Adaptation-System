@@ -1,0 +1,169 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "Layer 9A — Data quality monitoring: missing bars, price anomalies, feature distribution drift",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 5},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Missing Ratio\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'missing_ratio'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Missing Bar Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 5},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_name AS metric,\n  metric_value\nFROM monitoring_metrics\nWHERE\n  monitor_type = 'data'\n  AND metric_name LIKE 'abnormal_%_ratio'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Abnormal Price Ratio (by field)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 5},
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.05},
+              {"color": "red", "value": 0.01}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"KS p-value\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'feature_dist_shift_pvalue'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Feature Distribution KS p-value (< 0.05 = drift)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 5},
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.1},
+              {"color": "red", "value": 0.25}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"PSI\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'feature_dist_shift_psi'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Feature PSI (WARN ≥ 0.10, CRIT ≥ 0.25)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "severity"}, "properties": [
+            {"id": "custom.displayMode", "value": "color-background"},
+            {"id": "mappings", "value": [
+              {"options": {"CRITICAL": {"color": "red", "index": 0}, "WARNING": {"color": "yellow", "index": 1}}, "type": "value"}
+            ]}
+          ]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "id": 5,
+      "options": {"sortBy": [{"displayName": "alert_time", "desc": true}]},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  alert_time,\n  metric_name,\n  severity,\n  current_value,\n  message\nFROM alerts\nWHERE\n  monitor_type = 'data'\n  AND $__timeFilter(alert_time)\nORDER BY alert_time DESC\nLIMIT 50",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Data Alerts",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": ["darams", "data", "monitoring"],
+  "templating": {"list": []},
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS — Data Monitor",
+  "uid": "darams_data_monitor",
+  "version": 1
+}

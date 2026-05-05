@@ -30,11 +30,13 @@ class PaperTradingEngine:
         self,
         initial_capital: float = 10_000_000.0,
         slippage_bps: float = 5.0,
-        commission_rate: float = 0.001425,
+        commission_rate: float = 0.000926,
+        tax_rate: float = 0.003,
     ) -> None:
         self._capital = initial_capital
         self._slippage_bps = slippage_bps
         self._commission_rate = commission_rate
+        self._tax_rate = tax_rate
         self._positions: dict[str, dict[str, Any]] = {}
         self._cash = initial_capital
 
@@ -100,6 +102,7 @@ class PaperTradingEngine:
             fill_price = price * slip_mult
             fill_qty = abs(quantity)
             commission = fill_price * fill_qty * self._commission_rate
+            tax = fill_price * fill_qty * self._tax_rate if side == OrderSide.SELL else 0.0
             slippage = (fill_price - price) / price * 10000
 
             fills.append({
@@ -110,10 +113,11 @@ class PaperTradingEngine:
                 "fill_price": fill_price,
                 "fill_quantity": fill_qty,
                 "commission": commission,
+                "tax": tax,
                 "slippage_bps": slippage,
             })
 
-            self._update_position(sec_id, quantity, fill_price, commission)
+            self._update_position(sec_id, quantity, fill_price, commission + tax)
 
         orders_df = pd.DataFrame(orders)
         fills_df = pd.DataFrame(fills)

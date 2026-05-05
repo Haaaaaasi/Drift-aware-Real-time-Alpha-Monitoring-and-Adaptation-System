@@ -60,8 +60,11 @@ class StrategyMonitor:
                 now, "rolling_sharpe", sr, window=self._sharpe_window, severity=sev
             ))
 
-        # Max drawdown
+        # Cumulative return & max drawdown
         cumulative = (1 + portfolio_returns).cumprod()
+        cum_ret = float(cumulative.iloc[-1]) - 1.0 if len(cumulative) > 0 else 0.0
+        metrics.append(self._metric(now, "cumulative_return", cum_ret))
+
         dd = max_drawdown(cumulative)
         sev_dd = None
         if abs(dd) >= self._dd_crit:

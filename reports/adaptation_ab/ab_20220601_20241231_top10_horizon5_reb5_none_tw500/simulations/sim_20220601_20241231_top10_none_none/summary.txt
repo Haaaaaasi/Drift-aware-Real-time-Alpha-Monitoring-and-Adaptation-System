@@ -1,0 +1,26 @@
+=== 模擬摘要：sim_20220601_20241231_top10_none_none ===
+  期間            : 2022-06-01 → 2024-12-31
+  交易日數        : 631
+  Adaptation 策略 : none (凍結訓練（no-adapt baseline）)
+  實際重訓次數    : 1
+  Top-K           : 10
+
+--- 績效 ---
+  累積報酬        :  -31.629 %
+  年化報酬        :  -14.088 %
+  Sharpe Ratio    :   -0.602
+  Gross avg bps   :    5.290
+  Net avg bps     :   -5.108
+  最大回撤        :  -39.786 %
+  日勝率          :    48.97 %
+  期末組合價值    :   6,837,128.86
+
+--- 組合特徵 ---
+  平均持倉數      :     9.23
+  平均週轉率      :   0.1978
+
+--- 成本拆分（bps/日，turnover-weighted） ---
+  Commission      :    3.297
+  Tax (sell-side) :    5.320
+  Slippage        :    1.781
+  Total           :   10.398

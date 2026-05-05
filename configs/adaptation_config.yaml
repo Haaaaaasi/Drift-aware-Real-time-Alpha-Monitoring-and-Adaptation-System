@@ -15,7 +15,9 @@ policy_2_performance_triggered:
 
 policy_3_recurring_concept:
   enabled: false                 # MVP v3
-  similarity_threshold: 0.80
+  # Phase B-1：score = exp(-d_zscored/2) * staleness * perf_gate；舊 cosine 0.80
+  # 在新公式下相當於 d ≤ 0.45 std（過嚴），改用 0.50（≈ d ≤ 1.4 std）
+  similarity_threshold: 0.50
   min_pool_size: 5
   shadow_evaluation_days: 2
 

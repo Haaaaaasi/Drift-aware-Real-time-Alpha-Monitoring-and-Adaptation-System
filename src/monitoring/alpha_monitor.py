@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 
 from src.common.logging import get_logger
-from src.common.metrics import information_coefficient, rank_information_coefficient
+from src.common.metrics import (
+    information_coefficient,
+    population_stability_index,
+    rank_information_coefficient,
+)
 from src.config.constants import AlertSeverity, MonitorType
 
 logger = get_logger(__name__)
@@ -24,6 +28,8 @@ class AlphaMonitor:
         turnover_crit: float = 0.95,
         corr_drift_warn: float = 0.2,
         corr_drift_crit: float = 0.4,
+        psi_warn: float = 0.10,
+        psi_crit: float = 0.25,
     ) -> None:
         self._ic_window = ic_window
         self._ic_warn = ic_warn
@@ -32,12 +38,15 @@ class AlphaMonitor:
         self._turnover_crit = turnover_crit
         self._corr_drift_warn = corr_drift_warn
         self._corr_drift_crit = corr_drift_crit
+        self._psi_warn = psi_warn
+        self._psi_crit = psi_crit
 
     def run(
         self,
         alpha_panel: pd.DataFrame,
         forward_returns: pd.Series,
         baseline_corr_matrix: pd.DataFrame | None = None,
+        reference_alpha_values: dict[str, np.ndarray] | None = None,
     ) -> list[dict]:
         """Run all alpha monitoring checks.
 
@@ -45,6 +54,8 @@ class AlphaMonitor:
             alpha_panel: Long format [security_id, tradetime, alpha_id, alpha_value].
             forward_returns: Series indexed by (security_id, tradetime).
             baseline_corr_matrix: Historical pairwise alpha correlation for drift detection.
+            reference_alpha_values: Optional {alpha_id -> reference sample} for
+                per-alpha PSI drift detection (training window baseline).
         """
         metrics = []
         now = pd.Timestamp.utcnow()
@@ -94,6 +105,21 @@ class AlphaMonitor:
                     metrics.append(self._metric(
                         now, "alpha_turnover", float(changes), aid, severity=sev_turn
                     ))
+
+            # Per-alpha PSI drift (if reference baseline provided)
+            if reference_alpha_values is not None and aid in reference_alpha_values:
+                current_vals = slice_df["alpha_value"].dropna().to_numpy()
+                psi = population_stability_index(
+                    reference_alpha_values[aid], current_vals
+                )
+                sev_psi = None
+                if psi >= self._psi_crit:
+                    sev_psi = AlertSeverity.CRITICAL
+                elif psi >= self._psi_warn:
+                    sev_psi = AlertSeverity.WARNING
+                metrics.append(self._metric(
+                    now, "alpha_value_psi", float(psi), aid, severity=sev_psi
+                ))
 
         # Pairwise correlation drift
         if baseline_corr_matrix is not None and len(alpha_ids) >= 2:

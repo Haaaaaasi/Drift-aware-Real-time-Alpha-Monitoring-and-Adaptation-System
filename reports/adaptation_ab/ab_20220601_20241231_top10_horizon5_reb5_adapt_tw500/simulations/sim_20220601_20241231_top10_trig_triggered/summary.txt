@@ -1,0 +1,26 @@
+=== 模擬摘要：sim_20220601_20241231_top10_trig_triggered ===
+  期間            : 2022-06-01 → 2024-12-31
+  交易日數        : 631
+  Adaptation 策略 : triggered (依 rolling IC / Sharpe 退化觸發重訓)
+  實際重訓次數    : 27
+  Top-K           : 10
+
+--- 績效 ---
+  累積報酬        :  -26.917 %
+  年化報酬        :  -11.771 %
+  Sharpe Ratio    :   -0.399
+  Gross avg bps   :    6.753
+  Net avg bps     :   -3.814
+  最大回撤        :  -40.927 %
+  日勝率          :    48.18 %
+  期末組合價值    :   7,308,331.02
+
+--- 組合特徵 ---
+  平均持倉數      :     9.51
+  平均週轉率      :   0.1897
+
+--- 成本拆分（bps/日，turnover-weighted） ---
+  Commission      :    3.352
+  Tax (sell-side) :    5.406
+  Slippage        :    1.810
+  Total           :   10.567

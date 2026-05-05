@@ -48,8 +48,31 @@ def compute_label_available_at(
     horizon_bars: int,
     bar_type: str = "daily",
     buffer_bars: int = 1,
-) -> datetime:
-    """Compute when a label becomes available (signal_time + horizon + buffer)."""
+    trading_days: "pd.DatetimeIndex | None" = None,
+) -> "datetime | None":
+    """Compute when a label becomes available (signal_time + horizon + buffer).
+
+    For daily bars with ``trading_days`` supplied, returns the timestamp of
+    the ``(horizon + buffer)``-th actual trading bar after ``signal_time``.
+    If that bar doesn't exist in ``trading_days`` (signal is too close to the
+    end of available data), returns ``None`` — the caller should treat the
+    sample as immature and skip it.
+
+    ``trading_days`` must be a **sorted, unique, tz-naive, date-normalized**
+    DatetimeIndex; ``generate_labels`` enforces this before calling here.
+
+    For non-daily bar types, or when ``trading_days`` is not provided, falls
+    back to calendar-time arithmetic (legacy behaviour).
+    """
+    if bar_type == "daily" and trading_days is not None and len(trading_days) > 0:
+        sig_ts = pd.Timestamp(signal_time).normalize()
+        pos = trading_days.searchsorted(sig_ts, side="left")
+        target_pos = pos + horizon_bars + buffer_bars
+        if target_pos < len(trading_days):
+            return trading_days[target_pos].to_pydatetime()
+        # Not enough future bars — label is not yet observable.
+        return None
+
     if bar_type == "daily":
         delta = timedelta(days=horizon_bars + buffer_bars)
     elif bar_type == "30min":

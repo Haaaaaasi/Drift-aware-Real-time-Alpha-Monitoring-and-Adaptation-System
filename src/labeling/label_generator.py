@@ -46,6 +46,13 @@ class LabelGenerator:
             DataFrame [security_id, signal_time, horizon, forward_return,
                        forward_direction, label_available_at].
         """
+        # Market-wide trading-day index: sorted, unique, tz-naive, date-normalized.
+        # Used so label_available_at counts actual trading bars, not calendar days.
+        # DatetimeIndex.unique() returns DatetimeArray (no sort_values),
+        # so we sort via sorted(set(...)) and re-wrap.
+        _raw = pd.to_datetime(price_data["tradetime"].dropna().unique()).normalize()
+        market_trading_days = pd.DatetimeIndex(sorted(set(_raw)))
+
         all_labels = []
 
         for sec_id, group in price_data.groupby("security_id"):
@@ -61,8 +68,12 @@ class LabelGenerator:
 
                     signal_time = row["tradetime"]
                     avail = compute_label_available_at(
-                        signal_time, h, self._bar_type, self._buffer
+                        signal_time, h, self._bar_type, self._buffer,
+                        trading_days=market_trading_days,
                     )
+                    if avail is None:
+                        # Insufficient future bars — label not yet observable; skip.
+                        continue
 
                     all_labels.append({
                         "security_id": sec_id,

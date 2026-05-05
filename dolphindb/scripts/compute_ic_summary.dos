@@ -1,0 +1,58 @@
+// 逐 alpha 計算 IC，避免全表 join 53M rows OOM
+// 每次只載一個 alpha (~553k rows) 與 fwdRet join，計算後立即釋放
+
+// 1. 預先計算 forward return（只需載入一次，552k rows）
+print("Step 1: loading bars and computing forward returns...")
+bars = select security_id, tradetime, close
+    from loadTable("dfs://darams_market", "standardized_bars")
+    where bar_type = "daily" and is_tradable = true
+
+fwdRet = select security_id, tradetime,
+    (move(close, -5) / close - 1) as fwd5
+from bars context by security_id csort tradetime
+fwdRet = select * from fwdRet where isValid(fwd5)
+bars = NULL
+print("  fwdRet rows = " + string(size(fwdRet)))
+
+// 2. 取所有 alpha id
+alphaIds = exec distinct alpha_id
+    from loadTable("dfs://darams_alpha", "alpha_features")
+    order by alpha_id
+print("  alpha count = " + string(size(alphaIds)))
+
+// 3. 建結果表
+result = table(200:0,
+    `alpha_id`ic`rank_ic`hit_rate`n,
+    [STRING, DOUBLE, DOUBLE, DOUBLE, LONG])
+
+// 4. 逐 alpha 計算
+for (aid in alphaIds) {
+    alpha_data = select security_id, tradetime, alpha_value
+        from loadTable("dfs://darams_alpha", "alpha_features")
+        where alpha_id = aid and isValid(alpha_value)
+
+    joined = ej(alpha_data, fwdRet, `security_id`tradetime)
+    joined = select * from joined where isValid(alpha_value) and isValid(fwd5)
+    alpha_data = NULL
+
+    n = size(joined)
+    if (n < 50) {
+        print("SKIP " + aid + " n=" + string(n))
+        joined = NULL
+        continue
+    }
+
+    ic_val      = corr(joined.alpha_value, joined.fwd5)
+    rank_ic_val = spearmanr(joined.alpha_value, joined.fwd5)
+    hit_val     = avg(iif(
+        (joined.alpha_value > 0 and joined.fwd5 > 0) or
+        (joined.alpha_value < 0 and joined.fwd5 < 0),
+        1.0, 0.0))
+    joined = NULL
+
+    result.tableInsert(aid, ic_val, rank_ic_val, hit_val, long(n))
+    print("OK " + aid + " ic=" + string(round(ic_val, 4)) + " rank_ic=" + string(round(rank_ic_val, 4)))
+}
+
+// 5. 排序後回傳
+select *, abs(rank_ic) as abs_rank_ic from result order by abs_rank_ic desc

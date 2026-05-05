@@ -1,0 +1,39 @@
+{
+  "run_id": "ab_20220601_20241231_top20_horizon5_top20_reb15_sched20_tw500",
+  "start": "2022-06-01",
+  "end": "2024-12-31",
+  "top_k": 20,
+  "portfolio_method": "equal_weight_topk",
+  "rebalance_every": 15,
+  "entry_rank": 20,
+  "exit_rank": 40,
+  "max_turnover": 1.0,
+  "min_holding_days": 0,
+  "objective": "forward_return",
+  "benchmark": "ew_buy_hold_universe",
+  "purge_days": 5,
+  "horizon_days": 5,
+  "capital": 10000000.0,
+  "slippage_bps": 5.0,
+  "commission_rate": 0.000926,
+  "tax_rate": 0.003,
+  "round_trip_cost_pct": null,
+  "trigger_window_days": 60,
+  "trigger_eval_gap_days": 20,
+  "shadow_warmup_days": 5,
+  "symbols": null,
+  "min_turnover_ntd": 0.0,
+  "alpha_source": "python",
+  "alpha_ids": null,
+  "skip_effective_filter": false,
+  "strategies": {
+    "scheduled_20": {
+      "strategy": "scheduled",
+      "retrain_every": 20
+    }
+  },
+  "run_dirs": {
+    "scheduled_20": "reports\\adaptation_ab\\ab_20220601_20241231_top20_horizon5_top20_reb15_sched20_tw500\\simulations\\sim_20220601_20241231_top20_sched20_scheduled_20"
+  },
+  "benchmark_path": "reports\\adaptation_ab\\ab_20220601_20241231_top20_horizon5_top20_reb15_sched20_tw500\\benchmarks\\ew_buy_hold_universe_daily_pnl.csv"
+}

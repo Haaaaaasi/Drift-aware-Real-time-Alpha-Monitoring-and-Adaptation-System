@@ -1,0 +1,332 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""},
+    {"type": "panel", "id": "barchart", "name": "Bar chart", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "Layer 9D — Strategy performance: cumulative return, drawdown, Sharpe, realized vs expected, model registry",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.0},
+              {"color": "green", "value": 0.5}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'rolling_sharpe' AND monitor_type = 'strategy' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Rolling Sharpe",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.1},
+              {"color": "red", "value": 0.2}
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'max_drawdown' AND monitor_type = 'strategy' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Max Drawdown (WARN ≥ 10%)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.2},
+              {"color": "green", "value": 0.5}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'realized_vs_expected' AND monitor_type = 'strategy' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Realized vs Expected Return Ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 0}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT COUNT(*) AS metric_value FROM alerts WHERE monitor_type = 'strategy' AND is_acknowledged = FALSE",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Unacked Strategy Alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "green"},
+          "custom": {"lineWidth": 2, "fillOpacity": 15},
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 0}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6},
+      "id": 10,
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Cumulative Return\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'cumulative_return'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "累積報酬率 (Cumulative Return)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 10},
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.0},
+              {"color": "green", "value": 0.5}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 16},
+      "id": 5,
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Rolling Sharpe\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'rolling_sharpe'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Rolling Sharpe Ratio (60-day, WARN < 0.5, CRIT < 0.0)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "red"},
+          "custom": {"lineWidth": 2, "fillOpacity": 20},
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.1},
+              {"color": "red", "value": 0.2}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 16},
+      "id": 6,
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Max Drawdown\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'max_drawdown'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Max Drawdown (WARN ≥ 10%, CRIT ≥ 20%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1, "fillOpacity": 5},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 26},
+      "id": 7,
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Realized vs Expected\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'realized_vs_expected'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Realized vs Expected Return Ratio Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "status"}, "properties": [
+            {"id": "custom.displayMode", "value": "color-background"},
+            {"id": "mappings", "value": [
+              {"options": {
+                "production": {"color": "green", "index": 0},
+                "shadow": {"color": "blue", "index": 1},
+                "retired": {"color": "grey", "index": 2}
+              }, "type": "value"}
+            ]}
+          ]}
+        ]
+      },
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 35},
+      "id": 8,
+      "options": {"sortBy": [{"displayName": "trained_at", "desc": true}]},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  model_id,\n  model_type,\n  trained_at,\n  status,\n  holdout_metrics->>'ic' AS holdout_ic,\n  holdout_metrics->>'rank_ic' AS holdout_rank_ic,\n  holdout_metrics->>'dir_accuracy' AS direction_accuracy\nFROM model_registry\nORDER BY trained_at DESC\nLIMIT 20",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Model Registry (Latest 20)",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "severity"}, "properties": [
+            {"id": "custom.displayMode", "value": "color-background"},
+            {"id": "mappings", "value": [
+              {"options": {"CRITICAL": {"color": "red", "index": 0}, "WARNING": {"color": "yellow", "index": 1}}, "type": "value"}
+            ]}
+          ]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 44},
+      "id": 9,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  alert_time,\n  metric_name,\n  severity,\n  current_value,\n  message\nFROM alerts\nWHERE\n  monitor_type = 'strategy'\n  AND $__timeFilter(alert_time)\nORDER BY alert_time DESC\nLIMIT 50",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Strategy Alerts",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": ["darams", "strategy", "monitoring"],
+  "templating": {"list": []},
+  "time": {"from": "now-30d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS — Strategy Monitor",
+  "uid": "darams_strategy_monitor",
+  "version": 1
+}

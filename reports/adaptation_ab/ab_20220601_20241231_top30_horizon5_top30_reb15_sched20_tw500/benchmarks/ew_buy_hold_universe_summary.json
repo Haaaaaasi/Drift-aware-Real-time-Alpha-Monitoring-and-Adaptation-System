@@ -1,0 +1,17 @@
+{
+  "n_days": 631,
+  "cumulative_return_pct": 43.612,
+  "annualized_return_pct": 15.552,
+  "sharpe": 1.054,
+  "max_drawdown_pct": -13.907,
+  "win_rate_pct": 58.95,
+  "avg_holdings": 1010.0,
+  "avg_turnover": 0.0016,
+  "avg_commission_bps": 0.015,
+  "avg_tax_bps": 0.0,
+  "avg_slippage_bps": 0.008,
+  "avg_total_cost_bps": 0.023,
+  "avg_gross_return_bps": 6.196,
+  "avg_net_return_bps": 6.173,
+  "final_value": 14361204.23
+}

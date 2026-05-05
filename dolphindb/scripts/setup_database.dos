@@ -51,7 +51,7 @@ createPartitionedTable(
     table=schema_alpha,
     tableName="alpha_features",
     partitionColumns=`tradetime`security_id,
-    sortColumns=`security_id`tradetime`alpha_id,
+    sortColumns=`security_id`alpha_id`tradetime,
     keepDuplicates=LAST
 )
 

@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   dolphindb:
-    image: dolphindb/dolphindb:v2.00.11
+    image: dolphindb/dolphindb:v2.00.18
     container_name: darams-dolphindb
     ports:
       - "8848:8848"
@@ -18,7 +16,7 @@ services:
     image: postgres:16-alpine
     container_name: darams-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_DB: darams
       POSTGRES_USER: darams
@@ -44,9 +42,16 @@ services:
       - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/home.json
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./dashboards:/etc/grafana/provisioning/dashboards
+      # Provisioning: datasources (PostgreSQL connection)
+      - ./dashboards/provisioning/datasources:/etc/grafana/provisioning/datasources
+      # Provisioning: dashboard provider config
+      - ./dashboards/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      # Dashboard JSON files
+      - ./dashboards:/var/lib/grafana/dashboards
     depends_on:
       - postgres
     restart: unless-stopped

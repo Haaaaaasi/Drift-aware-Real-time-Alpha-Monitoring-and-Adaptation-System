@@ -1,0 +1,16 @@
+- [yfinance guardrails](project_yfinance_guardrails_20260504.md) — 2026-05-04 已將 yfinance 降級為需 `--allow-yfinance` 明確解鎖的 demo/反例來源；正式 pipeline 預設 TEJ，alpha cache 加 per-source 路徑與 manifest，effective alpha 清單改為 JSON 唯一入口
+- [yfinance 8476 資料汙染解釋高 cum_ret](project_yfinance_8476_artifact.md) — 2026-05-03 對照證實：yfinance baseline 35,486% 全是 stock 8476 還原股價 bug；TEJ 同期 -77%，所有歷史 high cum_ret 都需重做
+- [WP9 TEJ baseline 重跑啟動](project_wp9_tej_baseline_20260504.md) — 2026-05-04 已用 TEJ + 新 effective_alphas.json 跑完五策略 baseline：五策略全為負績效，暫定排序 model_pool > scheduled_60 > triggered > none > scheduled_20；cost sweep 尚待補跑
+- [TEJ IS-only alpha selection](project_tej_is_alpha_selection.md) — 2026-05-03 在 TEJ 上重做 IS-only 篩選（IS 2018-2024-06, 200 random survivorship-correct）：64/101 通過、7 sign-flip；effective_alphas.json 已覆寫，WP9 待重跑
+- [WP9 Phase-A 結論翻轉](project_wp9_finding.md) — Phase A 拆窗口+扣成本後重跑：所有 adaptation 策略勝過 no-adapt，且排序在 4 段成本下穩健（rank_std=0）⚠️ 2026-05-03 發現是 yfinance 8476 artifact，須在 TEJ 上重做
+- [Model Pool Phase B 重構](project_model_pool_phase_b1.md) — A bug fix + B-1 z-scored Euclidean + B-2 15 維 fingerprint + B-3 top-k ensemble + Option C mean-form distance 已實作驗證（2.5 年 sim：0→3 reuse, sim=0.741, Sharpe 3.636→3.462）；尚未 commit
+- [本機 .venv / Codex 沙盒 ACL 注意事項](feedback_venv_acl.md) — 專案原 `.venv` 存在且可用（Python 3.11.9），但 Codex 沙盒內直接啟動會因 base Python ACL 被擋；需用專案 `.venv\Scripts\python.exe` 並在必要時以非沙盒權限執行，不要改用 Anaconda
+- [Language convention](feedback_language.md) — All project docs (CLAUDE.md, docs/, notebooks/, reports/) must be in Traditional Chinese; code identifiers stay English
+- [Python WQ101 Migration](project_python_wq101_migration.md) — DolphinDB OOM → 純 Python WQ101 實作完成，快取重建進行中，待 end-to-end 預測驗證
+- [WQ101 float window fix](feedback_wq101_float_windows.md) — 論文公式 window 是浮點數，需用 `_w(d)` helper 轉 int；修復後 101/101 alphas 全通
+- [Always read local project](feedback_read_local.md) — 永遠讀本地桌面路徑，不要讀 worktree；專案現在是 MVP3
+- [只跑相關測試](feedback_test_scope.md) — 不無謂跑全套 pytest（20+ 分鐘、大量記憶體）；只跑修改相關範圍，全套留 merge 前
+- [WP9 成本感知實驗流程重設計](project_wp9_cost_aware_redesign_20260504.md) — 2026-05-04 已實作 turnover_aware_topk、previous_weights turnover cap、net_return_proxy 診斷指標、buy-and-hold benchmark row 與 CLI flags；TEJ Phase 1/2 長實驗尚未執行
+- [WP9 訊號強度診斷](project_wp9_signal_diagnostics_20260505.md) — 2026-05-05 用 TEJ effective alphas 跑 zero-cost / decile / XGBoost vs simple / horizon alignment：gross edge 存在，XGB daily top-k zero-cost +351%，5 日持有 +110%；問題主要是成本與 portfolio turnover/residual，而非 alpha 完全太弱
+- [WP9 5 日 horizon 對齊實驗](project_wp9_horizon_aligned_experiment_20260505.md) — 2026-05-05 正式 TEJ + 真實成本重跑後，`scheduled_20 + rebalance_every=10 + train_window=500` 累積報酬 +47.679%，略勝 `ew_buy_hold_universe` +43.612%，但 Sharpe / max drawdown 較弱；下一步掃 top_k=20/30 與 rebalance_every=15/20
+- [WP9 5 日 horizon 小矩陣](project_wp9_horizon_aligned_experiment_20260505.md) — 2026-05-05 小矩陣已跑完：top20/top30 與 rebalance 15/20 都未勝過 `top_k=10 / rebalance_every=10`；`model_pool` 因 PostgreSQL registry 不通導致 `n_pool_reuses=0`，不可解讀為 recurring concept reuse 失敗，需補 offline pool backend

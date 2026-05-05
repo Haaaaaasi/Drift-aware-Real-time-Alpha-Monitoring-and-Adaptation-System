@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from src.common.logging import get_logger
-from src.common.metrics import hit_rate, ks_test_drift
+from src.common.metrics import calibration_error, hit_rate, ks_test_drift
 from src.config.constants import AlertSeverity, MonitorType
 
 logger = get_logger(__name__)
@@ -72,8 +72,8 @@ class ModelMonitor:
                 now, "prediction_dist_drift_pvalue", p_val, severity=sev_dist
             ))
 
-        # Expected Calibration Error (ECE)
-        ece = self._compute_ece(predictions, actuals)
+        # Expected Calibration Error (ECE) — centralized in common.metrics
+        ece = calibration_error(predictions, actuals)
         sev_cal = None
         if ece > self._cal_crit:
             sev_cal = AlertSeverity.CRITICAL
@@ -83,31 +83,6 @@ class ModelMonitor:
 
         logger.info("model_monitor_complete", metrics_count=len(metrics))
         return metrics
-
-    def _compute_ece(
-        self,
-        predictions: pd.Series,
-        actuals: pd.Series,
-        n_bins: int = 10,
-    ) -> float:
-        """Expected Calibration Error."""
-        valid = predictions.notna() & actuals.notna()
-        if valid.sum() < 10:
-            return 0.0
-        pred = predictions[valid].values
-        act = (actuals[valid] > 0).astype(float).values
-        # Convert scores to probabilities via sigmoid-like mapping
-        prob = 1.0 / (1.0 + np.exp(-pred))
-        bins = np.linspace(0, 1, n_bins + 1)
-        ece = 0.0
-        for i in range(n_bins):
-            mask = (prob >= bins[i]) & (prob < bins[i + 1])
-            if mask.sum() == 0:
-                continue
-            avg_conf = prob[mask].mean()
-            avg_acc = act[mask].mean()
-            ece += mask.sum() / len(pred) * abs(avg_conf - avg_acc)
-        return float(ece)
 
     def _metric(self, time, name, value, dimension=None, severity=None):
         return {

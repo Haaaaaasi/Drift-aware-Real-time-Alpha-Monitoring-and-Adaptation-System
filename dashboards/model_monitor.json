@@ -1,0 +1,270 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "Layer 9C — Model health: directional accuracy, calibration ECE, prediction distribution drift",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.48},
+              {"color": "green", "value": 0.52}
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'directional_accuracy' AND monitor_type = 'model' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Directional Accuracy",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.1},
+              {"color": "red", "value": 0.2}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'calibration_ece' AND monitor_type = 'model' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Calibration ECE (WARN ≥ 0.10)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.05},
+              {"color": "red", "value": 0.01}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'prediction_dist_drift_pvalue' AND monitor_type = 'model' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Prediction Dist KS p-value (< 0.05 = drift)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0},
+              {"color": "green", "value": 1}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "background"},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT COUNT(*) AS metric_value FROM alerts WHERE monitor_type = 'model' AND severity = 'CRITICAL' AND is_acknowledged = FALSE",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Unacked Model CRITICAL Alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 5},
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.48},
+              {"color": "green", "value": 0.52}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
+      "id": 5,
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Directional Accuracy\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'directional_accuracy'\n  AND monitor_type = 'model'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Directional Accuracy Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 5},
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.1},
+              {"color": "red", "value": 0.2}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
+      "id": 6,
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Calibration ECE\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'calibration_ece'\n  AND monitor_type = 'model'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Calibration ECE Over Time (WARN ≥ 0.10, CRIT ≥ 0.20)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1, "fillOpacity": 5},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 15},
+      "id": 7,
+      "options": {"tooltip": {"mode": "single"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Prediction KS p-value\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'prediction_dist_drift_pvalue'\n  AND monitor_type = 'model'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Prediction Distribution KS p-value (reference vs live)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "severity"}, "properties": [
+            {"id": "custom.displayMode", "value": "color-background"},
+            {"id": "mappings", "value": [
+              {"options": {"CRITICAL": {"color": "red", "index": 0}, "WARNING": {"color": "yellow", "index": 1}}, "type": "value"}
+            ]}
+          ]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+      "id": 8,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  alert_time,\n  metric_name,\n  severity,\n  current_value,\n  message\nFROM alerts\nWHERE\n  monitor_type = 'model'\n  AND $__timeFilter(alert_time)\nORDER BY alert_time DESC\nLIMIT 50",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Model Alerts",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": ["darams", "model", "monitoring"],
+  "templating": {"list": []},
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS — Model Monitor",
+  "uid": "darams_model_monitor",
+  "version": 1
+}

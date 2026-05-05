@@ -20,7 +20,7 @@ class DolphinDBClient:
 
     @property
     def session(self) -> ddb.Session:
-        if self._session is None or not self._session.isConnected:
+        if self._session is None:
             self._session = ddb.Session()
             self._session.connect(
                 self._settings.host,
@@ -59,6 +59,6 @@ class DolphinDBClient:
         return self.run(script)
 
     def close(self) -> None:
-        if self._session and self._session.isConnected:
+        if self._session is not None:
             self._session.close()
             logger.info("dolphindb_disconnected")

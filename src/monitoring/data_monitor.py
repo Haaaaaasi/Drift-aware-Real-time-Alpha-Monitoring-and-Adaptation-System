@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from src.common.logging import get_logger
-from src.common.metrics import ks_test_drift
+from src.common.metrics import ks_test_drift, population_stability_index
 from src.config.constants import AlertSeverity, MonitorType
 
 logger = get_logger(__name__)
@@ -24,6 +24,8 @@ class DataMonitor:
         stale_warn: int = 5,
         stale_crit: int = 10,
         price_sigma: float = 10.0,
+        psi_warn: float = 0.10,
+        psi_crit: float = 0.25,
     ) -> None:
         self._missing_warn = missing_warn
         self._missing_crit = missing_crit
@@ -32,6 +34,8 @@ class DataMonitor:
         self._stale_warn = stale_warn
         self._stale_crit = stale_crit
         self._price_sigma = price_sigma
+        self._psi_warn = psi_warn
+        self._psi_crit = psi_crit
 
     def run(
         self,
@@ -84,7 +88,7 @@ class DataMonitor:
                     dimension=sec_id, severity=sev,
                 ))
 
-        # Feature distribution shift (KS-test)
+        # Feature distribution shift (KS-test + PSI, complementary indicators)
         if reference_features is not None and "close" in bars.columns:
             current = bars["close"].dropna().values
             stat, p_val = ks_test_drift(reference_features, current)
@@ -95,6 +99,16 @@ class DataMonitor:
                 sev = AlertSeverity.WARNING
             metrics.append(self._metric(
                 now, "feature_dist_shift_pvalue", p_val, severity=sev
+            ))
+
+            psi = population_stability_index(reference_features, current)
+            sev_psi = None
+            if psi >= self._psi_crit:
+                sev_psi = AlertSeverity.CRITICAL
+            elif psi >= self._psi_warn:
+                sev_psi = AlertSeverity.WARNING
+            metrics.append(self._metric(
+                now, "feature_dist_shift_psi", psi, severity=sev_psi
             ))
 
         logger.info("data_monitor_complete", metrics_count=len(metrics))

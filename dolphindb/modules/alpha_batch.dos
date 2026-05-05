@@ -1,84 +1,259 @@
 // DARAMS — Batch Alpha Computation Module
 // Computes selected WQAlpha factors on historical standardized_bars.
+// Each WQAlpha function takes individual panel matrices as arguments.
 
 use wq101alpha
-use prepare101
+
+/**
+ * preparePanels: Convert a standardized_bars table into panel matrices.
+ *
+ * @param rawData TABLE — must have columns: security_id, tradetime, open, high, low, close, vol, vwap, cap, indclass
+ * @return DICT(STRING, ANY) — keys are column names, values are panel matrices
+ */
+def preparePanels(rawData) {
+    tradeDates = exec distinct(tradetime) as tradetime from rawData order by tradetime
+    securityIds = exec distinct(security_id) as security_id from rawData order by security_id
+
+    panels = dict(STRING, ANY)
+    panels["close"]    = panel(rawData.tradetime, rawData.security_id, rawData.close,    tradeDates, securityIds)
+    panels["open"]     = panel(rawData.tradetime, rawData.security_id, rawData.open,     tradeDates, securityIds)
+    panels["high"]     = panel(rawData.tradetime, rawData.security_id, rawData.high,     tradeDates, securityIds)
+    panels["low"]      = panel(rawData.tradetime, rawData.security_id, rawData.low,      tradeDates, securityIds)
+    panels["vol"]      = panel(rawData.tradetime, rawData.security_id, rawData.vol,      tradeDates, securityIds)
+    panels["vwap"]     = panel(rawData.tradetime, rawData.security_id, rawData.vwap,     tradeDates, securityIds)
+    panels["cap"]      = panel(rawData.tradetime, rawData.security_id, rawData.cap,      tradeDates, securityIds)
+    panels["indclass"] = panel(rawData.tradetime, rawData.security_id, rawData.indclass, tradeDates, securityIds)
+    panels["tradeDates"]  = tradeDates
+    panels["securityIds"] = securityIds
+    return panels
+}
+
+/**
+ * matrixToLongTable: Convert a result matrix back to long-format table.
+ *
+ * @param mat MATRIX — alpha result matrix (rows=dates, cols=securities)
+ * @param tradeDates VECTOR — row labels
+ * @param securityIds VECTOR — column labels
+ * @param alphaName STRING — e.g. "wq001"
+ * @param startDate DATE — filter results from this date onwards
+ * @return TABLE with columns: security_id, tradetime, alpha_id, alpha_value
+ */
+def matrixToLongTable(mat, tradeDates, securityIds, alphaName, startDate) {
+    nDates = size(tradeDates)
+    nSecs  = size(securityIds)
+    total  = nDates * nSecs
+
+    // DolphinDB flatten is column-major: col1_allRows, col2_allRows, ...
+    t = table(
+        stretch(securityIds, total) as security_id,
+        take(tradeDates, total)     as tradetime,
+        take(alphaName, total)      as alpha_id,
+        flatten(mat)                as alpha_value
+    )
+
+    return select * from t where tradetime >= timestamp(startDate) and isValid(alpha_value)
+}
 
 /**
  * computeBatchAlphas: Compute a set of WQAlpha factors for a date range.
  *
+ * Writes each alpha's long-format output directly to dfs://darams_alpha/alpha_features
+ * immediately after computation, avoiding a large in-memory accumulator (which OOMs
+ * on the ~31M-row 101-alpha × 380k-bar universe under DolphinDB community 8GB).
+ *
  * @param startDate DATE  — start of computation window
  * @param endDate   DATE  — end of computation window
  * @param alphaIds  VECTOR<INT> — list of alpha numbers to compute, e.g. [1, 2, 3, 6]
- * @return TABLE with columns: security_id, tradetime, alpha_id, alpha_value
+ * @param versionId STRING — version tag stamped onto every written row
+ * @return TABLE with a single row summary: n_rows_written, n_alphas_ok, n_alphas_failed
  */
-def computeBatchAlphas(startDate, endDate, alphaIds) {
+def computeBatchAlphas(startDate, endDate, alphaIds, versionId) {
     // Load standardized bars with lookback buffer (252 trading days)
-    bufferStart = temporalAdd(startDate, -252, "d")
+    bufferStart = temporalAdd(startDate, -365, "d")
 
     bars = loadTable("dfs://darams_market", "standardized_bars")
     rawData = select * from bars
         where tradetime between timestamp(bufferStart) : timestamp(endDate)
         and bar_type = "daily"
         and is_tradable = true
+        order by security_id, tradetime
 
     if (size(rawData) == 0) {
         print("WARNING: No data found for range " + string(startDate) + " to " + string(endDate))
-        return table(1:0, `security_id`tradetime`alpha_id`alpha_value, [SYMBOL, TIMESTAMP, SYMBOL, DOUBLE])
+        return table([0] as n_rows_written, [0] as n_alphas_ok, [0] as n_alphas_failed)
     }
 
-    inputData = prepareData(rawData)
+    panels = preparePanels(rawData)
+    close    = panels["close"]
+    open     = panels["open"]
+    high     = panels["high"]
+    low      = panels["low"]
+    vol      = panels["vol"]
+    vwap     = panels["vwap"]
+    cap      = panels["cap"]
+    indclass = panels["indclass"]
+    tradeDates  = panels["tradeDates"]
+    securityIds = panels["securityIds"]
 
-    results = table(1:0, `security_id`tradetime`alpha_id`alpha_value, [SYMBOL, TIMESTAMP, SYMBOL, DOUBLE])
-
-    // Dynamically dispatch alpha computation
-    alphaFuncMap = dict(INT, ANY)
-    alphaFuncMap[1]  = WQAlpha1
-    alphaFuncMap[2]  = WQAlpha2
-    alphaFuncMap[3]  = WQAlpha3
-    alphaFuncMap[4]  = WQAlpha4
-    alphaFuncMap[6]  = WQAlpha6
-    alphaFuncMap[8]  = WQAlpha8
-    alphaFuncMap[9]  = WQAlpha9
-    alphaFuncMap[12] = WQAlpha12
-    alphaFuncMap[14] = WQAlpha14
-    alphaFuncMap[18] = WQAlpha18
-    alphaFuncMap[20] = WQAlpha20
-    alphaFuncMap[23] = WQAlpha23
-    alphaFuncMap[26] = WQAlpha26
-    alphaFuncMap[28] = WQAlpha28
-    alphaFuncMap[41] = WQAlpha41
+    db = loadTable("dfs://darams_alpha", "alpha_features")
+    totalWritten = 0
+    nOk = 0
+    nFailed = 0
 
     for (aid in alphaIds) {
-        if (aid in alphaFuncMap.keys()) {
-            alphaFunc = alphaFuncMap[aid]
-            try {
-                raw = alphaFunc(inputData)
-                // raw is a table/vector; reshape into long format
-                alphaName = "wq" + lpad(string(aid), 3, "0")
-                t = select
+        alphaName = "wq" + lpad(string(aid), 3, "0")
+        try {
+            mat = NULL
+
+            // --- Full WQ101 dispatch (signatures from wq101alpha::defs()) ---
+            // indclass-requiring alphas use a hash-based industry proxy (not real sector data).
+            if      (aid == 1)   { mat = WQAlpha1(close) }
+            else if (aid == 2)   { mat = WQAlpha2(vol, close, open) }
+            else if (aid == 3)   { mat = WQAlpha3(vol, open) }
+            else if (aid == 4)   { mat = WQAlpha4(low) }
+            else if (aid == 5)   { mat = WQAlpha5(vwap, open, close) }
+            else if (aid == 6)   { mat = WQAlpha6(vol, open) }
+            else if (aid == 7)   { mat = WQAlpha7(vol, close) }
+            else if (aid == 8)   { mat = WQAlpha8(open, close) }
+            else if (aid == 9)   { mat = WQAlpha9(close) }
+            else if (aid == 10)  { mat = WQAlpha10(close) }
+            else if (aid == 11)  { mat = WQAlpha11(vwap, vol, close) }
+            else if (aid == 12)  { mat = WQAlpha12(vol, close) }
+            else if (aid == 13)  { mat = WQAlpha13(vol, close) }
+            else if (aid == 14)  { mat = WQAlpha14(vol, open, close) }
+            else if (aid == 15)  { mat = WQAlpha15(vol, high) }
+            else if (aid == 16)  { mat = WQAlpha16(vol, high) }
+            else if (aid == 17)  { mat = WQAlpha17(vol, close) }
+            else if (aid == 18)  { mat = WQAlpha18(close, open) }
+            else if (aid == 19)  { mat = WQAlpha19(close) }
+            else if (aid == 20)  { mat = WQAlpha20(open, close, high, low) }
+            else if (aid == 21)  { mat = WQAlpha21(close, vol) }
+            else if (aid == 22)  { mat = WQAlpha22(close, vol, high) }
+            else if (aid == 23)  { mat = WQAlpha23(high) }
+            else if (aid == 24)  { mat = WQAlpha24(close) }
+            else if (aid == 25)  { mat = WQAlpha25(close, vol, high, vwap) }
+            else if (aid == 26)  { mat = WQAlpha26(vol, high) }
+            else if (aid == 27)  { mat = WQAlpha27(vol, vwap) }
+            else if (aid == 28)  { mat = WQAlpha28(vol, high, low, close) }
+            else if (aid == 29)  { mat = WQAlpha29(close) }
+            else if (aid == 30)  { mat = WQAlpha30(vol, close) }
+            else if (aid == 31)  { mat = WQAlpha31(vol, close, low) }
+            else if (aid == 32)  { mat = WQAlpha32(close, vwap) }
+            else if (aid == 33)  { mat = WQAlpha33(open, close) }
+            else if (aid == 34)  { mat = WQAlpha34(close) }
+            else if (aid == 35)  { mat = WQAlpha35(vol, close, high, low) }
+            else if (aid == 36)  { mat = WQAlpha36(vol, open, close, vwap) }
+            else if (aid == 37)  { mat = WQAlpha37(open, close) }
+            else if (aid == 38)  { mat = WQAlpha38(open, close) }
+            else if (aid == 39)  { mat = WQAlpha39(vol, close) }
+            else if (aid == 40)  { mat = WQAlpha40(vol, high) }
+            else if (aid == 41)  { mat = WQAlpha41(high, low, vwap) }
+            else if (aid == 42)  { mat = WQAlpha42(vwap, close) }
+            else if (aid == 43)  { mat = WQAlpha43(vol, close) }
+            else if (aid == 44)  { mat = WQAlpha44(vol, high) }
+            else if (aid == 45)  { mat = WQAlpha45(vol, close) }
+            else if (aid == 46)  { mat = WQAlpha46(close) }
+            else if (aid == 47)  { mat = WQAlpha47(vol, close, high, vwap) }
+            else if (aid == 48)  { mat = WQAlpha48(close, indclass) }
+            else if (aid == 49)  { mat = WQAlpha49(close) }
+            else if (aid == 50)  { mat = WQAlpha50(vol, vwap) }
+            else if (aid == 51)  { mat = WQAlpha51(close) }
+            else if (aid == 52)  { mat = WQAlpha52(vol, close, low) }
+            else if (aid == 53)  { mat = WQAlpha53(close, high, low) }
+            else if (aid == 54)  { mat = WQAlpha54(open, close, high, low) }
+            else if (aid == 55)  { mat = WQAlpha55(vol, close, high, low) }
+            else if (aid == 56)  { mat = WQAlpha56(close, cap) }
+            else if (aid == 57)  { mat = WQAlpha57(close, vwap) }
+            else if (aid == 58)  { mat = WQAlpha58(vol, vwap, indclass) }
+            else if (aid == 59)  { mat = WQAlpha59(vol, vwap, indclass) }
+            else if (aid == 60)  { mat = WQAlpha60(vol, close, high, low) }
+            else if (aid == 61)  { mat = WQAlpha61(vol, vwap) }
+            else if (aid == 62)  { mat = WQAlpha62(vol, vwap, open, high, low) }
+            else if (aid == 63)  { mat = WQAlpha63(vol, open, close, vwap, indclass) }
+            else if (aid == 64)  { mat = WQAlpha64(vol, vwap, open, high, low) }
+            else if (aid == 65)  { mat = WQAlpha65(vol, vwap, open) }
+            else if (aid == 66)  { mat = WQAlpha66(vwap, high, low, open) }
+            else if (aid == 67)  { mat = WQAlpha67(vol, high, vwap, indclass) }
+            else if (aid == 68)  { mat = WQAlpha68(vol, close, high, low) }
+            else if (aid == 69)  { mat = WQAlpha69(vol, close, vwap, indclass) }
+            else if (aid == 70)  { mat = WQAlpha70(vol, close, vwap, indclass) }
+            else if (aid == 71)  { mat = WQAlpha71(vol, vwap, close, open, low) }
+            else if (aid == 72)  { mat = WQAlpha72(vol, vwap, high, low) }
+            else if (aid == 73)  { mat = WQAlpha73(vwap, open, low) }
+            else if (aid == 74)  { mat = WQAlpha74(vol, vwap, close, high) }
+            else if (aid == 75)  { mat = WQAlpha75(vol, vwap, low) }
+            else if (aid == 76)  { mat = WQAlpha76(vol, low, vwap, indclass) }
+            else if (aid == 77)  { mat = WQAlpha77(vol, vwap, high, low) }
+            else if (aid == 78)  { mat = WQAlpha78(vol, vwap, low) }
+            else if (aid == 79)  { mat = WQAlpha79(vol, open, close, vwap, indclass) }
+            else if (aid == 80)  { mat = WQAlpha80(vol, open, high, indclass) }
+            else if (aid == 81)  { mat = WQAlpha81(vol, vwap) }
+            else if (aid == 82)  { mat = WQAlpha82(vol, open, indclass) }
+            else if (aid == 83)  { mat = WQAlpha83(vol, vwap, close, high, low) }
+            else if (aid == 84)  { mat = WQAlpha84(vwap, close) }
+            else if (aid == 85)  { mat = WQAlpha85(vol, close, high, low) }
+            else if (aid == 86)  { mat = WQAlpha86(vol, vwap, open, close) }
+            else if (aid == 87)  { mat = WQAlpha87(vol, close, vwap, indclass) }
+            else if (aid == 88)  { mat = WQAlpha88(vol, open, close, high, low) }
+            else if (aid == 89)  { mat = WQAlpha89(vol, low, vwap, indclass) }
+            else if (aid == 90)  { mat = WQAlpha90(vol, low, close, indclass) }
+            else if (aid == 91)  { mat = WQAlpha91(vol, close, vwap, indclass) }
+            else if (aid == 92)  { mat = WQAlpha92(vol, open, close, high, low) }
+            else if (aid == 93)  { mat = WQAlpha93(vol, close, vwap, indclass) }
+            else if (aid == 94)  { mat = WQAlpha94(vol, vwap) }
+            else if (aid == 95)  { mat = WQAlpha95(vol, open, high, low) }
+            else if (aid == 96)  { mat = WQAlpha96(vol, vwap, close) }
+            else if (aid == 97)  { mat = WQAlpha97(vol, low, vwap, indclass) }
+            else if (aid == 98)  { mat = WQAlpha98(vwap, open, vol) }
+            else if (aid == 99)  { mat = WQAlpha99(vol, high, low) }
+            else if (aid == 100) { mat = WQAlpha100(vol, high, low, close, indclass) }
+            else if (aid == 101) { mat = WQAlpha101(close, open, high, low) }
+            else {
+                print("WARNING: WQAlpha" + string(aid) + " out of range 1..101, skipping")
+                continue
+            }
+
+            // 某些 alpha（如 wq061）回傳 BOOL matrix，需轉換才能寫入 DOUBLE 欄位
+            if (typestr(mat) != "FAST DOUBLE MATRIX") { mat = double(mat) }
+            t = matrixToLongTable(mat, tradeDates, securityIds, alphaName, startDate)
+            nRows = size(t)
+            if (nRows > 0) {
+                // Stamp the extra columns required by alpha_features schema and append
+                // immediately. Release t afterwards so the next alpha starts with a
+                // clean memory footprint.
+                enriched = select
                     security_id,
                     tradetime,
-                    alphaName as alpha_id,
-                    raw as alpha_value
-                from inputData
-                where tradetime >= timestamp(startDate)
-
-                results.append!(t)
-                print("Computed " + alphaName + ": " + string(size(t)) + " rows")
-            } catch(ex) {
-                print("ERROR computing WQAlpha" + string(aid) + ": " + ex)
+                    "daily" as bar_type,
+                    alpha_id,
+                    alpha_value,
+                    versionId as alpha_version_id,
+                    now() as computed_at
+                from t
+                db.append!(enriched)
+                totalWritten = totalWritten + nRows
+                t = NULL
+                enriched = NULL
+                // 每寫完一個 alpha 立即 flush TSDB cache，避免 write buffer 累積耗盡記憶體
+                flushTSDBCache()
             }
-        } else {
-            print("WARNING: WQAlpha" + string(aid) + " not in dispatch map, skipping")
+            mat = NULL
+            nOk = nOk + 1
+            print("Computed " + alphaName + ": " + string(nRows) + " rows (cumulative=" + string(totalWritten) + ")")
+        } catch(ex) {
+            nFailed = nFailed + 1
+            print("ERROR computing " + alphaName + ": " + string(ex))
         }
     }
 
-    return results
+    print("computeBatchAlphas done: written=" + string(totalWritten) + " ok=" + string(nOk) + " failed=" + string(nFailed))
+    return table([totalWritten] as n_rows_written, [nOk] as n_alphas_ok, [nFailed] as n_alphas_failed)
 }
 
 /**
- * saveAlphaFeatures: Persist computed alpha features to DolphinDB partitioned table.
+ * saveAlphaFeatures (LEGACY): Persist a pre-computed long-format alpha table.
+ * Kept for ad-hoc use only — the main computeBatchAlphas path now writes per-alpha
+ * directly, so this function should not be called in the standard backfill flow.
  */
 def saveAlphaFeatures(alphaTable, versionId) {
     if (size(alphaTable) == 0) {

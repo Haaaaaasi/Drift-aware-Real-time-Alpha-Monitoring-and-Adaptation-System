@@ -40,6 +40,7 @@ class RiskManager:
         self,
         targets: pd.DataFrame,
         current_positions: pd.DataFrame | None = None,
+        previous_weights: dict[str, float] | pd.Series | None = None,
         cumulative_drawdown: float = 0.0,
         market_data: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
@@ -92,23 +93,81 @@ class RiskManager:
             constraint_log["exposure_scaled"] = round(scale, 4)
 
         # Turnover constraint
-        if current_positions is not None and not current_positions.empty:
-            merged = adjusted.merge(
-                current_positions[["security_id", "quantity"]].rename(
-                    columns={"quantity": "current_qty"}
-                ),
-                on="security_id",
-                how="outer",
-            ).fillna(0)
-            # Approximate turnover as sum of weight changes / 2
-            implied_turnover = merged["target_weight"].sub(
-                merged.get("current_weight", 0), fill_value=0
-            ).abs().sum() / 2
-            if implied_turnover > self._max_turnover:
-                scale = self._max_turnover / implied_turnover
-                adjusted["target_weight"] *= scale
-                constraint_log["turnover_scaled"] = round(scale, 4)
+        prev = self._coerce_previous_weights(previous_weights, current_positions)
+        if prev:
+            adjusted = self._apply_turnover_cap(adjusted, prev, constraint_log)
 
         adjusted["pre_risk"] = False
+        adjusted.attrs["turnover_cap_applied"] = "turnover_scaled" in constraint_log
         logger.info("risk_constraints_applied", constraints=constraint_log)
         return adjusted
+
+    @staticmethod
+    def _coerce_previous_weights(
+        previous_weights: dict[str, float] | pd.Series | None,
+        current_positions: pd.DataFrame | None,
+    ) -> dict[str, float]:
+        if previous_weights is not None:
+            if isinstance(previous_weights, pd.Series):
+                return {
+                    str(k): float(v)
+                    for k, v in previous_weights.items()
+                    if abs(float(v)) > 1e-12
+                }
+            return {
+                str(k): float(v)
+                for k, v in previous_weights.items()
+                if abs(float(v)) > 1e-12
+            }
+        if current_positions is None or current_positions.empty:
+            return {}
+        if "current_weight" in current_positions.columns:
+            return {
+                str(row["security_id"]): float(row["current_weight"])
+                for _, row in current_positions.iterrows()
+                if abs(float(row["current_weight"])) > 1e-12
+            }
+        return {}
+
+    def _apply_turnover_cap(
+        self,
+        adjusted: pd.DataFrame,
+        previous: dict[str, float],
+        constraint_log: dict[str, int | float],
+    ) -> pd.DataFrame:
+        if adjusted.empty:
+            return adjusted
+
+        first = adjusted.iloc[0]
+        target = {
+            str(row["security_id"]): float(row["target_weight"])
+            for _, row in adjusted.iterrows()
+        }
+        all_secs = sorted(set(previous) | set(target))
+        buys = sum(max(0.0, target.get(sec, 0.0) - previous.get(sec, 0.0)) for sec in all_secs)
+        sells = sum(max(0.0, previous.get(sec, 0.0) - target.get(sec, 0.0)) for sec in all_secs)
+        implied_turnover = max(buys, sells)
+        if implied_turnover <= self._max_turnover or implied_turnover <= 1e-12:
+            return adjusted
+
+        scale = self._max_turnover / implied_turnover
+        rows = []
+        original_by_sec = adjusted.set_index("security_id").to_dict("index")
+        for sec in all_secs:
+            prev_w = previous.get(sec, 0.0)
+            tgt_w = target.get(sec, 0.0)
+            new_w = prev_w + (tgt_w - prev_w) * scale
+            if abs(new_w) <= 1e-12:
+                continue
+            base = dict(original_by_sec.get(sec, {}))
+            base.setdefault("rebalance_time", first.get("rebalance_time"))
+            base.setdefault("security_id", sec)
+            base.setdefault("target_shares", 0)
+            base.setdefault("construction_method", first.get("construction_method", "unknown"))
+            base.setdefault("pre_risk", True)
+            base["target_weight"] = new_w
+            rows.append(base)
+
+        capped = pd.DataFrame(rows)
+        constraint_log["turnover_scaled"] = round(scale, 4)
+        return capped

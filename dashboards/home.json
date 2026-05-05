@@ -1,0 +1,393 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "barchart", "name": "Bar chart", "version": ""},
+    {"type": "panel", "id": "text", "name": "Text", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "DARAMS 首頁 — 策略績效總覽：累積報酬折線圖 + 關鍵指標",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["darams"],
+      "targetBlank": false,
+      "title": "所有 DARAMS 監控",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0},
+              {"color": "green", "value": 0.1}
+            ]
+          },
+          "unit": "percentunit",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'cumulative_return' AND monitor_type = 'strategy' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "累積報酬率",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.0},
+              {"color": "green", "value": 0.5}
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'rolling_sharpe' AND monitor_type = 'strategy' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Rolling Sharpe",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": -0.1},
+              {"color": "red", "value": -0.2}
+            ]
+          },
+          "unit": "percentunit",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT metric_value FROM monitoring_metrics WHERE metric_name = 'max_drawdown' AND monitor_type = 'strategy' ORDER BY metric_time DESC LIMIT 1",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "Max Drawdown",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 5}
+            ]
+          },
+          "unit": "short",
+          "mappings": [
+            {"options": {"0": {"color": "green", "index": 0, "text": "0 — 正常"}}, "type": "value"}
+          ]
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT COUNT(*) AS metric_value FROM alerts WHERE is_acknowledged = FALSE",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "未處理 Alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "green"},
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 0}
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 5},
+      "id": 5,
+      "options": {
+        "tooltip": {"mode": "single", "sort": "none"},
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"累積報酬率\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'cumulative_return'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "策略累積報酬率折線圖 (Cumulative Return)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.0},
+              {"color": "green", "value": 0.5}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 19},
+      "id": 6,
+      "options": {
+        "tooltip": {"mode": "single"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Rolling Sharpe\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'rolling_sharpe'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Rolling Sharpe Ratio (60 日)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "red"},
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": -0.1},
+              {"color": "red", "value": -0.2}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 19},
+      "id": 7,
+      "options": {
+        "tooltip": {"mode": "single"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Max Drawdown\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'max_drawdown'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "Max Drawdown",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "never"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": -0.001},
+              {"color": "green", "value": 0.001}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28},
+      "id": 8,
+      "options": {
+        "tooltip": {"mode": "single"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  metric_time AS time,\n  metric_value AS \"Daily PnL\"\nFROM monitoring_metrics\nWHERE\n  metric_name = 'daily_pnl'\n  AND monitor_type = 'strategy'\n  AND $__timeFilter(metric_time)\nORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "title": "每日損益 (Daily PnL)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "severity"}, "properties": [
+            {"id": "custom.displayMode", "value": "color-background"},
+            {"id": "mappings", "value": [
+              {"options": {
+                "CRITICAL": {"color": "red", "index": 0},
+                "WARNING":  {"color": "yellow", "index": 1}
+              }, "type": "value"}
+            ]}
+          ]}
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 36},
+      "id": 9,
+      "options": {},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "rawSql": "SELECT\n  alert_time,\n  monitor_type,\n  metric_name,\n  severity,\n  current_value,\n  message\nFROM alerts\nWHERE\n  $__timeFilter(alert_time)\nORDER BY alert_time DESC\nLIMIT 30",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "title": "最近告警 (Recent Alerts)",
+      "type": "table"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": ["darams", "home", "strategy"],
+  "templating": {"list": []},
+  "time": {"from": "now-90d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS — 首頁 (Home)",
+  "uid": "darams_home",
+  "version": 1
+}

@@ -67,6 +67,89 @@ class PerformanceTriggeredAdapter:
 
         return False, ""
 
+    def check_trigger_from_db(
+        self,
+        conn=None,
+        window: int = 20,
+    ) -> tuple[bool, str]:
+        """從 PostgreSQL monitoring_metrics 表讀取指標後呼叫 check_trigger()。
+
+        DB 不可用或任何例外 → fallback 回傳 (False, "db_unavailable")，不拋例外。
+
+        Parameters
+        ----------
+        conn:
+            可選的 psycopg2 connection；若 None 則自行呼叫 get_pg_connection()
+        window:
+            從 monitoring_metrics 取最近幾筆資料（預設 20）
+        """
+        _owns_conn = False
+        try:
+            if conn is None:
+                from src.common.db import get_pg_connection
+                conn = get_pg_connection()
+                _owns_conn = True
+        except Exception as exc:
+            logger.warning("check_trigger_from_db_conn_failed", error=str(exc))
+            return (False, "db_unavailable")
+
+        try:
+            ic_df = pd.read_sql(
+                "SELECT metric_time, metric_value FROM monitoring_metrics "
+                "WHERE metric_name = 'rolling_ic' "
+                "ORDER BY metric_time DESC LIMIT %(window)s",
+                conn,
+                params={"window": window},
+            )
+            sharpe_df = pd.read_sql(
+                "SELECT metric_time, metric_value FROM monitoring_metrics "
+                "WHERE metric_name = 'rolling_sharpe' "
+                "ORDER BY metric_time DESC LIMIT %(window)s",
+                conn,
+                params={"window": window},
+            )
+
+            # DESC 查詢需 reverse 還原時間正序，使 .tail(N) 取到最新 N 天
+            rolling_ic = pd.Series(
+                ic_df["metric_value"].iloc[::-1].values if not ic_df.empty else [],
+                dtype=float,
+            )
+            rolling_sharpe = pd.Series(
+                sharpe_df["metric_value"].iloc[::-1].values if not sharpe_df.empty else [],
+                dtype=float,
+            )
+
+            try:
+                from src.monitoring.alert_manager import AlertManager
+                critical_count = AlertManager().get_unacknowledged_critical_count()
+            except Exception as exc:
+                logger.warning("check_trigger_from_db_critical_count_failed", error=str(exc))
+                critical_count = 0
+
+            logger.info(
+                "check_trigger_from_db_loaded",
+                ic_records=len(rolling_ic),
+                sharpe_records=len(rolling_sharpe),
+                critical_count=critical_count,
+                window=window,
+            )
+            return self.check_trigger(rolling_ic, rolling_sharpe, critical_count)
+
+        except Exception as exc:
+            logger.warning(
+                "check_trigger_from_db_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            return (False, "db_unavailable")
+
+        finally:
+            if _owns_conn and conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
     def adapt(
         self,
         alpha_panel: pd.DataFrame,

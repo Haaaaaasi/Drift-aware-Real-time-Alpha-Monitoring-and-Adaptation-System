@@ -16,8 +16,8 @@ class DolphinDBSettings(BaseSettings):
 
 
 class PostgresSettings(BaseSettings):
-    host: str = "localhost"
-    port: int = 5432
+    host: str = "127.0.0.1"
+    port: int = 5433
     db: str = "darams"
     user: str = "darams"
     password: str = "darams_dev"
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     mlflow_tracking_uri: str = "http://localhost:5000"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 @lru_cache

@@ -1,0 +1,47 @@
+{
+  "run_id": "ab_20220601_20241231_top10_horizon5_top10_reb10_model_pool_tw500",
+  "start": "2022-06-01",
+  "end": "2024-12-31",
+  "top_k": 10,
+  "portfolio_method": "equal_weight_topk",
+  "rebalance_every": 10,
+  "entry_rank": 20,
+  "exit_rank": 40,
+  "max_turnover": 1.0,
+  "min_holding_days": 0,
+  "objective": "forward_return",
+  "benchmark": "ew_buy_hold_universe",
+  "purge_days": 5,
+  "horizon_days": 5,
+  "capital": 10000000.0,
+  "slippage_bps": 5.0,
+  "commission_rate": 0.000926,
+  "tax_rate": 0.003,
+  "round_trip_cost_pct": null,
+  "trigger_window_days": 60,
+  "trigger_eval_gap_days": 20,
+  "shadow_warmup_days": 5,
+  "symbols": null,
+  "min_turnover_ntd": 0.0,
+  "alpha_source": "python",
+  "alpha_ids": null,
+  "skip_effective_filter": false,
+  "strategies": {
+    "model_pool": {
+      "strategy": "model_pool",
+      "trigger_ic_threshold": 0.0,
+      "trigger_ic_days": 3,
+      "trigger_sharpe_threshold": 0.0,
+      "trigger_sharpe_days": 10,
+      "min_retrain_gap": 20,
+      "similarity_threshold": 0.5,
+      "pool_regime_window": 60,
+      "shadow_window": 20,
+      "pool_top_k": 3
+    }
+  },
+  "run_dirs": {
+    "model_pool": "reports\\adaptation_ab\\ab_20220601_20241231_top10_horizon5_top10_reb10_model_pool_tw500\\simulations\\sim_20220601_20241231_top10_pool_model_pool"
+  },
+  "benchmark_path": "reports\\adaptation_ab\\ab_20220601_20241231_top10_horizon5_top10_reb10_model_pool_tw500\\benchmarks\\ew_buy_hold_universe_daily_pnl.csv"
+}
