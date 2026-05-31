@@ -15,9 +15,7 @@ from __future__ import annotations
 
 import argparse
 import socket
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 # ── add project root to sys.path ─────────────────────────────────────────────

@@ -7,9 +7,7 @@ import pandas as pd
 
 from src.common.logging import get_logger
 from src.common.metrics import (
-    cross_sectional_zscore,
     rank_information_coefficient,
-    winsorize,
 )
 
 logger = get_logger(__name__)

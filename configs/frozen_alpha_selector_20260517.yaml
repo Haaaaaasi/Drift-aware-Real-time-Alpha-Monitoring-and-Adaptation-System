@@ -1,0 +1,103 @@
+# DARAMS frozen alpha selector specification.
+# Traditional Chinese rationale is documented in docs/final_robustness_holdout_protocol.md.
+
+frozen_selector_id: incumbent55_rolling_topk20_w126_pen10_20260517
+frozen_at: "2026-05-17"
+status: FROZEN_FOR_PROSPECTIVE_HOLDOUT
+git_commit_at_freeze: b6cdf70d503af1995b804d5c522c840c66bcea6a
+
+research_boundary:
+  validation_period_start: "2024-07-01"
+  validation_period_end: "2026-04-30"
+  validation_period_status: FROZEN_VALIDATION_NOT_UNTOUCHED_HOLDOUT
+  reason: validation_period_used_for_selector_portfolio_and_alpha_expansion_decisions
+  prospective_holdout_start_rule: first_trading_day_after_current_tej_cache_end_expected_2026_05_01_or_later
+
+data:
+  data_source: tej
+  bars_path: data/tw_stocks_tej.parquet
+  alpha_cache_path: data/alpha_cache/wq101_alphas.parquet
+  cache_alignment_rule: inner_join_on_security_id_tradetime
+  yfinance_allowed: false
+
+alpha_universe:
+  source: reports/alpha_ic_analysis/effective_alphas.json
+  selection_origin: TEJ_IS_ONLY
+  selected_before_oos: true
+  n_effective_alphas: 64
+  exclude_indclass_cap_alphas: true
+  n_live_alphas_after_exclusion: 55
+  expansion_status: STOPPED
+  rejected_expansion_evidence:
+    all_valid_82_report: reports/adaptation_ab/rolling_topk_all_valid_oos_20260516/all_valid_experiment_summary.md
+    admission_gate_matrix: reports/adaptation_ab/admission_gate_matrix_20260517/matrix_summary.csv
+    admission_gate_attribution: reports/adaptation_ab/admission_gate_attribution_20260517/admitted_alpha_attribution_summary.md
+
+selector:
+  name: rolling_topk
+  alpha_top_k: 20
+  ranking_window_days: 126
+  stability_penalty: 0.10
+  min_coverage: 0.20
+  min_observations: 1000
+  score_source: point_in_time_matured_label_only
+  label_available_rule: signal_date_plus_horizon_plus_purge
+  admission_gate_enabled: false
+  fallback_selector: static_is
+
+model:
+  meta_model: xgboost
+  adaptation_policy: scheduled_20
+  train_window_days: 500
+  model_pool_enabled: false
+  model_pool_next_rule: compare_against_scheduled_20_incumbent_using_this_frozen_selector
+
+portfolio:
+  method: turnover_aware_topk
+  top_k: 10
+  rebalance_every: 10
+  entry_rank: 20
+  exit_rank: 60
+  max_turnover: 0.25
+  min_holding_days: 10
+  tail_cleanup_weight: 0.0025
+  objective: net_return_proxy
+
+execution:
+  primary_price: next_vwap
+  secondary_price: next_open
+  close_fill_allowed_for_claims: false
+
+costs:
+  commission_rate_per_side: 0.000926
+  tax_rate_sell_side: 0.003
+  slippage_bps_per_side: 5
+
+labels:
+  horizon_days: 5
+  purge_days: 5
+  delayed_label_required: true
+
+canonical_artifacts:
+  primary_next_vwap_run: reports/adaptation_ab/rolling_topk_stability_matrix_20260514/sim_20240701_20260430_top10_sched20_rtop20_w126_pen10_nextvwap
+  secondary_next_open_run: reports/adaptation_ab/rolling_topk_best_execution_check_20260514/sim_20240701_20260430_top10_sched20_rtop20_w126_pen10_nextopen
+  robustness_package: reports/adaptation_ab/rolling_topk_validation_20260514
+  final_p0_report: reports/adaptation_ab/final_robustness_20260517/final_robustness_summary.md
+  holdout_protocol: docs/final_robustness_holdout_protocol.md
+
+prospective_holdout_rules:
+  report_all_future_months: true
+  primary_metric_price: next_vwap
+  secondary_metric_price: next_open
+  no_parameter_change_after_freeze: true
+  no_alpha_universe_change_after_freeze: true
+  no_deleting_bad_months: true
+  allowed_before_holdout:
+    - reproducibility_io_cache_alignment_or_snapshot_bugfix
+    - documentation_manifest_seed_and_replay_metadata
+    - rerun_existing_validation_without_changing_frozen_config
+  invalidates_holdout_if:
+    - tune_selector_or_portfolio_params_from_holdout_results
+    - change_alpha_universe_or_reenable_admission_gate
+    - promote_next_open_to_primary_result
+    - report_only_good_months_or_delete_failed_runs

@@ -6,10 +6,8 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-import numpy as np
 import pandas as pd
 
-from src.common.db import get_pg_connection
 from src.common.logging import get_logger
 from src.config.constants import OrderSide, OrderStatus
 

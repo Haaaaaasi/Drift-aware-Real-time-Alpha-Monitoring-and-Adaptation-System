@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -126,6 +128,34 @@ class TestPrediction:
         a = model.predict(features)["signal_score"].to_numpy()
         b = model.predict(features)["signal_score"].to_numpy()
         np.testing.assert_array_equal(a, b)
+
+
+class TestArtifactPersistence:
+    def test_save_and_load_artifact_preserves_predictions(self, synthetic_panel, tmp_path):
+        features, labels = synthetic_panel
+        model = MLMetaModel(feature_columns=["wq_strong", "wq_weak"])
+        model.train(features, labels, purge_days=2, n_splits=3)
+        before = model.predict(features)["signal_score"].to_numpy()
+
+        artifact_dir = model.save_artifact(
+            tmp_path / model.model_id,
+            extra_manifest={
+                "selector_snapshot_hash": "selector_hash",
+                "frozen_config_hash": "config_hash",
+                "trained_as_of": "2024-01-31",
+            },
+        )
+        loaded = MLMetaModel.load_artifact(artifact_dir)
+        after = loaded.predict(features)["signal_score"].to_numpy()
+
+        np.testing.assert_allclose(before, after)
+        assert loaded.model_id == model.model_id
+        assert loaded.feature_columns == ["wq_strong", "wq_weak"]
+
+        manifest = json.loads((artifact_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["selector_snapshot_hash"] == "selector_hash"
+        assert manifest["frozen_config_hash"] == "config_hash"
+        assert manifest["feature_columns"] == ["wq_strong", "wq_weak"]
 
 
 class TestFeatureColumnsFilter:

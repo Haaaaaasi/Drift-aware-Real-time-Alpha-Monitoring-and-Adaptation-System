@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
-import numpy as np
 import pandas as pd
 
 from src.common.db import get_pg_connection, get_dolphindb

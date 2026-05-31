@@ -13,11 +13,8 @@
 
 from __future__ import annotations
 
-import json
-import math
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -125,16 +122,19 @@ class _InMemoryRegimePool:
         return None, best
 
     def find_similar_regimes(
-        self, current_fp: dict, since=None, top_k: int = 1,
-    ) -> list[tuple[str, float]]:
+        self, current_fp: dict, since=None, top_k: int = 1, return_best_seen: bool = False,
+    ) -> list[tuple[str, float]] | tuple[list[tuple[str, float]], float]:
         if not self.entries:
-            return []
+            return ([], 0.0) if return_best_seen else []
         scored = [
             (e["regime_id"], self._score(current_fp, e["fingerprint"]))
             for e in self.entries
         ]
         scored.sort(key=lambda x: x[1], reverse=True)
-        return [(rid, s) for (rid, s) in scored if s >= self._threshold][:top_k]
+        passed = [(rid, s) for (rid, s) in scored if s >= self._threshold][:top_k]
+        if return_best_seen:
+            return passed, scored[0][1] if scored else 0.0
+        return passed
 
     def add_to_pool(self, fingerprint, model_id, alpha_weights, performance_summary) -> str:
         rid = f"regime_{len(self.entries):03d}"
@@ -183,9 +183,6 @@ def fake_pool(monkeypatch):
         self.get_regime_model = pool_instance.get_regime_model
         self.record_reuse = pool_instance.record_reuse
         self.update_last_evaluated_ic = pool_instance.update_last_evaluated_ic
-
-    # patch ModelPoolController.initialize_run 改用 fake pool
-    original_init_run = mps.ModelPoolController.initialize_run
 
     def _fake_initialize_run(ctrl_self):
         from datetime import datetime
@@ -314,6 +311,41 @@ class TestModelPoolStrategy:
         assert "pool_backend" in m
         assert m["pool_backend"] == "postgres"
 
+    def test_model_pool_diagnostics_outputs_decision_log(
+        self, synthetic_csv, sim_period, tmp_path, fake_pool
+    ):
+        """開啟 diagnostics 時應輸出候選層級 model_pool_decisions.csv。"""
+        start, end = sim_period
+        result = simulate(
+            csv_path=synthetic_csv,
+            start=start,
+            end=end,
+            strategy="model_pool",
+            top_k=5,
+            out_dir=tmp_path,
+            run_tag="diag",
+            model_pool_diagnostics=True,
+            min_retrain_gap=20,
+        )
+        decisions_path = Path(result["model_pool_decisions_path"])
+        assert decisions_path.exists()
+        decisions = pd.read_csv(decisions_path)
+        expected_cols = {
+            "candidate_model_id",
+            "candidate_role",
+            "selected",
+            "selected_candidate_model_id",
+            "applied_model_id",
+            "raw_best_candidate_model_id",
+            "best_non_reused_score",
+            "reuse_guard_reason",
+            "proxy_net_return",
+            "proxy_rank_by_net",
+        }
+        assert expected_cols.issubset(decisions.columns)
+        if not decisions.empty:
+            assert decisions["selected"].astype(bool).any()
+
     def test_model_pool_fallback_when_db_unavailable(
         self, synthetic_csv, sim_period, tmp_path, monkeypatch
     ):
@@ -360,6 +392,7 @@ class TestDefaultStrategiesCatalog:
         assert "similarity_threshold" in cfg
         assert "pool_regime_window" in cfg
         assert "shadow_window" in cfg
+        assert cfg["model_pool_selection_metric"] == "ic"
 
 
 class TestABExperimentFiveStrategies:
@@ -367,7 +400,7 @@ class TestABExperimentFiveStrategies:
     def test_ab_experiment_five_strategies(
         self, synthetic_csv, sim_period, tmp_path, fake_pool
     ):
-        """run_ab_experiment 跑完 5 組，comparison_df 有 5 列。"""
+        """run_ab_experiment 跑完預設策略組，comparison_df 與 DEFAULT_STRATEGIES 對齊。"""
         start, end = sim_period
         result = run_ab_experiment(
             csv_path=synthetic_csv,
@@ -379,8 +412,8 @@ class TestABExperimentFiveStrategies:
             run_tag="five",
         )
         df = result["comparison_df"]
-        assert len(df) == 5, f"應有 5 列策略，實際 {len(df)}"
-        assert "model_pool" in df.index
+        assert len(df) == len(DEFAULT_STRATEGIES)
+        assert set(DEFAULT_STRATEGIES).issubset(set(df.index))
         # comparison.csv 應含 pool 相關欄位
         assert "n_pool_reuses" in df.columns
         assert "n_pool_misses" in df.columns
@@ -403,8 +436,11 @@ class TestShadowWarmupGap:
             min_improvement_ic=0.005,
             purge_days=5,
             horizon_days=5,
+            selection_metric="topk_net_return",
+            shadow_proxy_top_k=5,
         )
         assert ctrl._shadow_warmup_days == 5
+        assert ctrl._selection_metric == "topk_net_return"
 
     def test_simulate_passes_shadow_warmup_to_pool(
         self, synthetic_csv, sim_period, tmp_path, fake_pool

@@ -104,7 +104,7 @@ def test_incremental_update(tmp_path, tiny_bars):
 
 def test_force_recompute(tmp_path, tiny_bars):
     path = tmp_path / "alpha_cache.parquet"
-    first = compute_with_cache(tiny_bars, alpha_ids=["wq001"], cache_path=path, data_source="custom")
+    compute_with_cache(tiny_bars, alpha_ids=["wq001"], cache_path=path, data_source="custom")
     second = compute_with_cache(
         tiny_bars,
         alpha_ids=["wq001"],
@@ -125,6 +125,73 @@ def test_alpha_id_filter(tmp_path, tiny_bars):
         data_source="custom",
     )
     assert set(result["alpha_id"].unique()).issubset({"wq001", "wq003"})
+
+
+def test_covered_cache_range_uses_filtered_read(tmp_path, tiny_bars, monkeypatch):
+    """A covered backtest window should not materialise the full cache."""
+    from src.alpha_engine import alpha_cache as cache_mod
+
+    path = tmp_path / "alpha_cache.parquet"
+    cache_mod.compute_with_cache(
+        tiny_bars,
+        alpha_ids=["wq001", "wq003"],
+        cache_path=path,
+        data_source="custom",
+    )
+
+    dates = tiny_bars["tradetime"].sort_values().unique()
+    subset_bars = tiny_bars[
+        (tiny_bars["tradetime"] >= dates[5])
+        & (tiny_bars["tradetime"] <= dates[14])
+    ]
+
+    def fail_full_cache_read(*args, **kwargs):
+        raise AssertionError("covered ranges should use _read_cache_slice")
+
+    monkeypatch.setattr(cache_mod, "read_cache", fail_full_cache_read)
+    result = cache_mod.compute_with_cache(
+        subset_bars,
+        alpha_ids=["wq001"],
+        cache_path=path,
+        data_source="custom",
+    )
+
+    assert set(result["alpha_id"].unique()) == {"wq001"}
+    assert result["tradetime"].min() >= subset_bars["tradetime"].min()
+    assert result["tradetime"].max() <= subset_bars["tradetime"].max()
+
+
+def test_cache_slice_aligns_to_requested_bar_keys(tmp_path):
+    path = tmp_path / "alpha_cache.parquet"
+    df = pd.DataFrame({
+        "security_id": ["AA", "AA", "ZZ"],
+        "tradetime": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-03"]),
+        "alpha_id": ["wq001", "wq001", "wq001"],
+        "alpha_value": [0.1, 0.2, 9.9],
+    })
+    write_cache(df, path, data_source="custom")
+    bars = pd.DataFrame({
+        "security_id": ["AA"],
+        "tradetime": pd.to_datetime(["2024-01-02"]),
+        "open": [10.0],
+        "high": [10.5],
+        "low": [9.5],
+        "close": [10.1],
+        "vwap": [10.0],
+        "vol": [1000],
+    })
+
+    result = compute_with_cache(
+        bars,
+        alpha_ids=["wq001"],
+        cache_path=path,
+        data_source="custom",
+    )
+
+    assert result[["security_id", "tradetime"]].drop_duplicates().to_dict("records") == [
+        {"security_id": "AA", "tradetime": pd.Timestamp("2024-01-02")}
+    ]
+    assert result["alpha_value"].tolist() == [0.1]
 
 
 def test_manifest_mismatch_raises(tmp_path):

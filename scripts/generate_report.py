@@ -37,12 +37,8 @@ from pipelines.daily_batch_pipeline import (
     generate_synthetic_alphas,
     load_csv_data,
     compute_python_alphas,
-    run_backtest,
 )
 from src.common.logging import setup_logging
-from src.labeling.evaluator import Evaluator
-from src.labeling.label_generator import LabelGenerator
-from src.config.constants import MVP_V1_ALPHA_IDS
 
 setup_logging()
 
@@ -196,7 +192,7 @@ def generate_report(
     ax4 = fig.add_subplot(gs[1, 1])
     ax4.axis("off")
 
-    from src.common.metrics import sharpe_ratio, max_drawdown as mdd_fn, profit_factor
+    from src.common.metrics import sharpe_ratio, profit_factor
     ann_ret = float((cumret.iloc[-1]) ** (252 / max(len(cumret), 1)) - 1)
     sharpe = sharpe_ratio(rets)
     vol = float(rets.std() * np.sqrt(252))

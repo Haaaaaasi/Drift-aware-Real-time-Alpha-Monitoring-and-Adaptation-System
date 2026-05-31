@@ -14,7 +14,7 @@ must satisfy, and that the offline simulation verifies end-to-end.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -294,7 +294,7 @@ class TestStreamAlphaComputerInterface:
 
     def test_output_buffer_starts_empty(self):
         """Output buffer should be empty before any bars are pushed."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
         with patch("src.alpha_engine.stream_compute.DolphinDBClient"):
             from src.alpha_engine.stream_compute import StreamAlphaComputer
             comp = StreamAlphaComputer()

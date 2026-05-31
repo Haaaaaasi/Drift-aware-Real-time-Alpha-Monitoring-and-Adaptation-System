@@ -6,7 +6,6 @@ import json
 from datetime import datetime
 
 import pandas as pd
-from psycopg2.extras import execute_batch
 
 from src.common.db import get_pg_connection
 from src.common.logging import get_logger
@@ -43,6 +42,9 @@ class ModelRegistryManager:
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (model_id) DO UPDATE SET
                     holdout_metrics = EXCLUDED.holdout_metrics,
+                    features_used = EXCLUDED.features_used,
+                    hyperparams = EXCLUDED.hyperparams,
+                    artifact_path = EXCLUDED.artifact_path,
                     status = EXCLUDED.status
             """
             with conn.cursor() as cur:

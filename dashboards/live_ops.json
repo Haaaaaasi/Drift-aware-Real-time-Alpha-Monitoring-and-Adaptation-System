@@ -1,0 +1,116 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "DARAMS live daily operating layer: current state, tomorrow recommendations, holdings, and alpha configuration.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT run_id, as_of_date, mode, run_purpose, is_official, status, data_source, data_max_date, data_lag_days, data_freshness_status, production_model_id, n_feature_alphas, feature_columns_hash, retrain_action, frozen_selector_id, selector_snapshot_hash, diagnostic_selector_snapshot_hash, run_started_at, run_finished_at FROM daily_live_runs WHERE is_official = true ORDER BY as_of_date DESC, run_started_at DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Current Live Run",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6},
+      "id": 2,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT tr.action, tr.security_id, tr.current_weight, tr.target_weight, tr.delta_weight, tr.current_shares, tr.target_shares, tr.delta_shares, tr.last_price, tr.signal_score, tr.rank, tr.reason, tr.status FROM trade_recommendations tr JOIN (SELECT run_id FROM daily_live_runs WHERE is_official = true ORDER BY as_of_date DESC, run_started_at DESC LIMIT 1) r ON r.run_id = tr.run_id WHERE tr.action <> 'HOLD' ORDER BY CASE tr.action WHEN 'BUY' THEN 1 WHEN 'INCREASE' THEN 2 WHEN 'REDUCE' THEN 3 WHEN 'SELL' THEN 4 ELSE 5 END, abs(tr.delta_weight) DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Tomorrow Trade Recommendations",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 16},
+      "id": 3,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT ps.security_id, ps.target_weight, ps.target_shares, ps.last_price, ps.market_value, ps.signal_score, ps.rank, ps.holding_days, ps.reason FROM portfolio_snapshots ps JOIN (SELECT run_id FROM daily_live_runs WHERE is_official = true ORDER BY as_of_date DESC, run_started_at DESC LIMIT 1) r ON r.run_id = ps.run_id WHERE abs(ps.target_weight) > 0 ORDER BY ps.target_weight DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Current Target Holdings",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 16},
+      "id": 4,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT s.alpha_id, s.selected, s.weight, s.score, s.rolling_rank_ic, s.coverage, s.stability, s.excluded_reason FROM alpha_selection_scores s JOIN (SELECT run_id FROM daily_live_runs WHERE is_official = true ORDER BY as_of_date DESC, run_started_at DESC LIMIT 1) r ON r.run_id = s.run_id WHERE s.snapshot_role = 'production' AND s.selected = true ORDER BY s.alpha_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Production Model Features",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 26},
+      "id": 5,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT s.alpha_id, s.selected, s.weight, s.score, s.rolling_rank_ic, s.coverage, s.stability, s.excluded_reason FROM alpha_selection_scores s JOIN (SELECT run_id FROM daily_live_runs WHERE is_official = true ORDER BY as_of_date DESC, run_started_at DESC LIMIT 1) r ON r.run_id = s.run_id WHERE s.snapshot_role = 'diagnostic' ORDER BY s.selected DESC, s.score DESC NULLS LAST, s.alpha_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Diagnostic Selector Today",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["DARAMS", "live", "daily"],
+  "templating": {"list": []},
+  "time": {"from": "now-30d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS Live Ops",
+  "uid": "darams-live-ops",
+  "version": 1,
+  "weekStart": ""
+}

@@ -44,7 +44,10 @@ import pandas as pd
 
 from pipelines.simulate_recent import (
     _compute_costs,
+    _file_sha256,
     _filter_universe,
+    _git_metadata,
+    _infer_data_source,
     _next_day_returns,
     _summarize,
     _trading_days,
@@ -52,7 +55,9 @@ from pipelines.simulate_recent import (
 )
 from pipelines.daily_batch_pipeline import load_csv_data
 from src.common.logging import get_logger, setup_logging
+from src.config.alpha_selection import EFFECTIVE_ALPHAS_PATH
 from src.config.constants import DATA_SOURCE_DEFAULT_PATHS, DEFAULT_DATA_SOURCE
+from src.config.frozen_alpha_selector import load_frozen_alpha_selector
 
 setup_logging()
 logger = get_logger("ab_experiment")
@@ -68,6 +73,10 @@ DEFAULT_STRATEGIES: dict[str, dict] = {
     "scheduled_20": {
         "strategy": "scheduled",
         "retrain_every": 20,
+    },
+    "scheduled_40": {
+        "strategy": "scheduled",
+        "retrain_every": 40,
     },
     "scheduled_60": {
         "strategy": "scheduled",
@@ -95,6 +104,7 @@ DEFAULT_STRATEGIES: dict[str, dict] = {
         "shadow_window": 20,
         # Phase B-3：top-k 個 reused 候選都丟進 shadow eval，由 evaluator 自選
         "pool_top_k": 3,
+        "model_pool_selection_metric": "ic",
     },
 }
 
@@ -123,9 +133,25 @@ def run_ab_experiment(
     commission_rate: float = 0.000926,
     tax_rate: float = 0.003,
     round_trip_cost_pct: float | None = None,
+    execution_price: str = "close",
+    hard_exit_score_threshold: float | None = None,
+    hard_exit_min_holding_days: int | None = None,
+    tail_cleanup_weight: float = 0.0,
+    renormalize_after_exit_cleanup: bool = False,
+    placebo_mode: str = "none",
+    placebo_seed: int = 0,
     trigger_window_days: int = 60,
     trigger_eval_gap_days: int = 20,
     shadow_warmup_days: int = 5,
+    model_pool_diagnostics: bool = False,
+    similarity_threshold: float = 0.5,
+    pool_top_k: int = 3,
+    pool_regime_window: int = 60,
+    shadow_window: int = 20,
+    model_pool_selection_metric: str = "ic",
+    model_pool_reuse_min_score: float | None = None,
+    model_pool_reuse_margin: float = 0.0,
+    model_pool_trigger_mode: str = "triggered",
     symbols: list[str] | None = None,
     min_turnover_ntd: float = 0.0,
     out_dir: str | Path = DEFAULT_OUT_DIR,
@@ -133,13 +159,44 @@ def run_ab_experiment(
     alpha_source: str = "python",
     alpha_ids: list[str] | None = None,
     skip_effective_filter: bool = False,
+    exclude_indclass_cap_alphas: bool = False,
     cost_sweep: list[float] | None = None,
     train_window_days: int | None = None,
+    data_source: str | None = None,
     allow_yfinance: bool = False,
+    frozen_config: str | Path | None = None,
+    frozen_execution: str = "primary",
 ) -> dict:
     """跑 A/B 實驗，回傳彙整結果。"""
     csv_path = Path(csv_path)
     out_dir = Path(out_dir)
+    frozen_meta: dict[str, object] = {}
+    if frozen_config is not None:
+        frozen_spec = load_frozen_alpha_selector(frozen_config)
+        frozen_overrides = frozen_spec.simulation_overrides(frozen_execution)
+        csv_path = Path(frozen_overrides["csv_path"])
+        data_source = str(frozen_overrides["data_source"])
+        allow_yfinance = bool(frozen_overrides["allow_yfinance"])
+        top_k = int(frozen_overrides["top_k"])
+        portfolio_method = str(frozen_overrides["portfolio_method"])
+        rebalance_every = int(frozen_overrides["rebalance_every"])
+        entry_rank = int(frozen_overrides["entry_rank"])
+        exit_rank = int(frozen_overrides["exit_rank"])
+        max_turnover = float(frozen_overrides["max_turnover"])
+        min_holding_days = int(frozen_overrides["min_holding_days"])
+        objective = str(frozen_overrides["objective"])
+        purge_days = int(frozen_overrides["purge_days"])
+        horizon_days = int(frozen_overrides["horizon_days"])
+        slippage_bps = float(frozen_overrides["slippage_bps"])
+        commission_rate = float(frozen_overrides["commission_rate"])
+        tax_rate = float(frozen_overrides["tax_rate"])
+        round_trip_cost_pct = frozen_overrides["round_trip_cost_pct"]
+        execution_price = str(frozen_overrides["execution_price"])
+        tail_cleanup_weight = float(frozen_overrides["tail_cleanup_weight"])
+        if "train_window_days" in frozen_overrides:
+            train_window_days = int(frozen_overrides["train_window_days"])
+        frozen_meta = frozen_spec.metadata(frozen_execution)
+
     tag = f"_{run_tag}" if run_tag else ""
     run_id = f"ab_{start.strftime('%Y%m%d')}_{end.strftime('%Y%m%d')}_top{top_k}{tag}"
     run_dir = out_dir / run_id
@@ -152,6 +209,18 @@ def run_ab_experiment(
         if strat_key not in DEFAULT_STRATEGIES:
             raise ValueError(f"未知策略 {strat_key!r}，可選：{list(DEFAULT_STRATEGIES)}")
     logger.info("ab_experiment_start", run_id=run_id, strategies=strategies, cost_sweep=cost_sweep)
+
+    model_pool_overrides = {
+        "similarity_threshold": similarity_threshold,
+        "pool_top_k": pool_top_k,
+        "pool_regime_window": pool_regime_window,
+        "shadow_window": shadow_window,
+        "model_pool_diagnostics": model_pool_diagnostics,
+        "model_pool_selection_metric": model_pool_selection_metric,
+        "model_pool_reuse_min_score": model_pool_reuse_min_score,
+        "model_pool_reuse_margin": model_pool_reuse_margin,
+        "model_pool_trigger_mode": model_pool_trigger_mode,
+    }
 
     # Sub-run output 寫到 ab run_dir 之內，避免多測試共用全域 reports/simulations/
     # 造成 daily_pnl.csv 互相覆寫
@@ -177,17 +246,28 @@ def run_ab_experiment(
         slippage_bps=slippage_bps,
         commission_rate=commission_rate,
         tax_rate=tax_rate,
+        execution_price=execution_price,
+        hard_exit_score_threshold=hard_exit_score_threshold,
+        hard_exit_min_holding_days=hard_exit_min_holding_days,
+        tail_cleanup_weight=tail_cleanup_weight,
+        renormalize_after_exit_cleanup=renormalize_after_exit_cleanup,
+        placebo_mode=placebo_mode,
+        placebo_seed=placebo_seed,
         out_dir=sim_out_dir,
         symbols=symbols,
         min_turnover_ntd=min_turnover_ntd,
         alpha_source=alpha_source,
         alpha_ids=alpha_ids,
         skip_effective_filter=skip_effective_filter,
+        exclude_indclass_cap_alphas=exclude_indclass_cap_alphas,
         trigger_window_days=trigger_window_days,
         trigger_eval_gap_days=trigger_eval_gap_days,
         shadow_warmup_days=shadow_warmup_days,
         train_window_days=train_window_days,
+        data_source=_infer_data_source(csv_path, data_source),
         allow_yfinance=allow_yfinance,
+        frozen_config=frozen_config,
+        frozen_execution=frozen_execution,
     )
 
     # --- 0. cost-sweep 模式：外層遍歷成本場景，每場景 N 策略 ---
@@ -198,12 +278,17 @@ def run_ab_experiment(
             run_dir=run_dir,
             run_id=run_id,
             common_sim_kwargs=common_sim_kwargs,
+            model_pool_overrides=model_pool_overrides,
         )
 
     # --- 1. 跑各組模擬（單一 baseline 成本，預設 None=用三細項） ---
     results: dict[str, dict] = {}
+    strategy_configs: dict[str, dict] = {}
     for strat_key in strategies:
         cfg = dict(DEFAULT_STRATEGIES[strat_key])
+        if cfg.get("strategy") == "model_pool":
+            cfg.update(model_pool_overrides)
+        strategy_configs[strat_key] = dict(cfg)
         logger.info("ab_strategy_start", strategy=strat_key, config=cfg)
 
         result = simulate(
@@ -233,6 +318,12 @@ def run_ab_experiment(
             "max_drawdown_pct": m.get("max_drawdown_pct", 0.0),
             "win_rate_pct": m.get("win_rate_pct", 0.0),
             "avg_turnover": m.get("avg_turnover", 0.0),
+            "avg_hard_exit_count": m.get("avg_hard_exit_count", 0.0),
+            "avg_hard_exit_weight": m.get("avg_hard_exit_weight", 0.0),
+            "avg_tail_exit_count": m.get("avg_tail_exit_count", 0.0),
+            "avg_tail_exit_weight": m.get("avg_tail_exit_weight", 0.0),
+            "avg_exit_cleanup_weight": m.get("avg_exit_cleanup_weight", 0.0),
+            "avg_negative_score_weight_after": m.get("avg_negative_score_weight_after", 0.0),
             "avg_gross_return_bps": m.get("avg_gross_return_bps", 0.0),
             "avg_total_cost_bps": m.get("avg_total_cost_bps", 0.0),
             "avg_net_return_bps": m.get("avg_net_return_bps", 0.0),
@@ -251,6 +342,7 @@ def run_ab_experiment(
             commission_rate=commission_rate,
             tax_rate=tax_rate,
             round_trip_cost_pct=round_trip_cost_pct,
+            execution_price=execution_price,
             symbols=symbols,
             min_turnover_ntd=min_turnover_ntd,
             run_dir=run_dir,
@@ -266,6 +358,12 @@ def run_ab_experiment(
             "max_drawdown_pct": bm.get("max_drawdown_pct", 0.0),
             "win_rate_pct": bm.get("win_rate_pct", 0.0),
             "avg_turnover": bm.get("avg_turnover", 0.0),
+            "avg_hard_exit_count": 0.0,
+            "avg_hard_exit_weight": 0.0,
+            "avg_tail_exit_count": 0.0,
+            "avg_tail_exit_weight": 0.0,
+            "avg_exit_cleanup_weight": 0.0,
+            "avg_negative_score_weight_after": 0.0,
             "avg_gross_return_bps": bm.get("avg_gross_return_bps", 0.0),
             "avg_total_cost_bps": bm.get("avg_total_cost_bps", 0.0),
             "avg_net_return_bps": bm.get("avg_net_return_bps", 0.0),
@@ -295,6 +393,9 @@ def run_ab_experiment(
         trigger_window_days=trigger_window_days,
         trigger_eval_gap_days=trigger_eval_gap_days,
         shadow_warmup_days=shadow_warmup_days,
+        purge_days=purge_days,
+        horizon_days=horizon_days,
+        shadow_window=shadow_window,
         commission_rate=commission_rate,
         tax_rate=tax_rate,
         slippage_bps=slippage_bps,
@@ -303,9 +404,19 @@ def run_ab_experiment(
 
     # --- 6. 存一份 config 方便回溯 ---
     config_path = run_dir / "config.json"
+    inferred_data_source = _infer_data_source(csv_path, data_source)
+    effective_alphas_path = None if skip_effective_filter else str(EFFECTIVE_ALPHAS_PATH)
+    pool_backends = {
+        k: res["summary_metrics"].get("pool_backend")
+        for k, res in results.items()
+        if res["summary_metrics"].get("pool_backend") not in (None, "n/a")
+    }
+    git_meta = _git_metadata()
     config_path.write_text(
         json.dumps({
             "run_id": run_id,
+            "data_source": inferred_data_source,
+            "csv_path": str(csv_path),
             "start": str(start),
             "end": str(end),
             "top_k": top_k,
@@ -324,15 +435,38 @@ def run_ab_experiment(
             "commission_rate": commission_rate,
             "tax_rate": tax_rate,
             "round_trip_cost_pct": round_trip_cost_pct,
+            "execution_price": execution_price,
+            "hard_exit_score_threshold": hard_exit_score_threshold,
+            "hard_exit_min_holding_days": hard_exit_min_holding_days,
+            "tail_cleanup_weight": tail_cleanup_weight,
+            "renormalize_after_exit_cleanup": renormalize_after_exit_cleanup,
+            "placebo_mode": placebo_mode,
+            "placebo_seed": placebo_seed,
             "trigger_window_days": trigger_window_days,
             "trigger_eval_gap_days": trigger_eval_gap_days,
             "shadow_warmup_days": shadow_warmup_days,
+            "model_pool_diagnostics": model_pool_diagnostics,
+            "similarity_threshold": similarity_threshold,
+            "pool_top_k": pool_top_k,
+            "pool_regime_window": pool_regime_window,
+            "shadow_window": shadow_window,
+            "model_pool_selection_metric": model_pool_selection_metric,
+            "model_pool_reuse_min_score": model_pool_reuse_min_score,
+            "model_pool_reuse_margin": model_pool_reuse_margin,
+            "model_pool_trigger_mode": model_pool_trigger_mode,
             "symbols": symbols,
             "min_turnover_ntd": min_turnover_ntd,
             "alpha_source": alpha_source,
             "alpha_ids": alpha_ids,
             "skip_effective_filter": skip_effective_filter,
-            "strategies": {k: DEFAULT_STRATEGIES[k] for k in strategies},
+            "exclude_indclass_cap_alphas": exclude_indclass_cap_alphas,
+            "effective_alphas_path": effective_alphas_path,
+            "effective_alphas_hash": _file_sha256(effective_alphas_path),
+            "pool_backend": pool_backends.get("model_pool"),
+            "pool_backends": pool_backends,
+            **frozen_meta,
+            **git_meta,
+            "strategies": strategy_configs,
             "run_dirs": {k: res["run_dir"] for k, res in results.items()},
             "benchmark_path": benchmark_result["daily_pnl_path"] if benchmark_result else None,
         }, indent=2, ensure_ascii=False),
@@ -361,6 +495,7 @@ def _run_ew_buy_hold_benchmark(
     commission_rate: float,
     tax_rate: float,
     round_trip_cost_pct: float | None,
+    execution_price: str,
     symbols: list[str] | None,
     min_turnover_ntd: float,
     run_dir: Path,
@@ -380,7 +515,7 @@ def _run_ew_buy_hold_benchmark(
 
     weight = 1.0 / len(initial)
     weights = {sec: weight for sec in initial}
-    next_ret = _next_day_returns(bars)
+    next_ret = _next_day_returns(bars, execution_price=execution_price)
     portfolio_value = capital
     records: list[dict] = []
 
@@ -407,6 +542,7 @@ def _run_ew_buy_hold_benchmark(
             "date": t.strftime("%Y-%m-%d"),
             "n_holdings": len(weights),
             "gross_exposure": sum(weights.values()),
+            "execution_price": execution_price,
             "turnover": turnover,
             "buys_turnover": buys,
             "sells_turnover": sells,
@@ -446,6 +582,7 @@ def _run_cost_sweep(
     run_dir: Path,
     run_id: str,
     common_sim_kwargs: dict,
+    model_pool_overrides: dict | None = None,
 ) -> dict:
     """成本敏感度 sweep：外層遍歷 cost 場景，每場景跑 N 策略。
 
@@ -465,6 +602,8 @@ def _run_cost_sweep(
         sub_runs[cost_label] = {}
         for strat_key in strategies:
             cfg = dict(DEFAULT_STRATEGIES[strat_key])
+            if cfg.get("strategy") == "model_pool" and model_pool_overrides:
+                cfg.update(model_pool_overrides)
             logger.info(
                 "ab_sweep_strategy_start",
                 cost_pct=cost_pct,
@@ -507,12 +646,26 @@ def _run_cost_sweep(
 
     # 寫 config + 摘要
     config_path = run_dir / "config.json"
+    effective_alphas_path = None if common_sim_kwargs.get("skip_effective_filter") else str(EFFECTIVE_ALPHAS_PATH)
+    git_meta = _git_metadata()
     config_path.write_text(
         json.dumps({
             "run_id": run_id,
             "mode": "cost_sweep",
+            "data_source": common_sim_kwargs.get("data_source"),
+            "csv_path": str(common_sim_kwargs["csv_path"]),
+            "effective_alphas_path": effective_alphas_path,
+            "effective_alphas_hash": _file_sha256(effective_alphas_path),
+            **git_meta,
             "cost_sweep": list(cost_sweep),
-            "strategies": strategies,
+            "strategies": {
+                k: (
+                    dict(DEFAULT_STRATEGIES[k]) | (model_pool_overrides or {})
+                    if DEFAULT_STRATEGIES[k].get("strategy") == "model_pool"
+                    else dict(DEFAULT_STRATEGIES[k])
+                )
+                for k in strategies
+            },
             "sub_runs": sub_runs,
             "common_sim_kwargs": {
                 k: (str(v) if isinstance(v, Path) else v)
@@ -722,6 +875,9 @@ def _write_experiment_summary(
     trigger_window_days: int = 60,
     trigger_eval_gap_days: int = 20,
     shadow_warmup_days: int = 5,
+    purge_days: int = 5,
+    horizon_days: int = 5,
+    shadow_window: int = 20,
     commission_rate: float = 0.000926,
     tax_rate: float = 0.003,
     slippage_bps: float = 5.0,
@@ -757,8 +913,10 @@ def _write_experiment_summary(
         "## 窗口與成本（Phase A 修正）",
         f"- Trigger window（rolling IC / Sharpe）：`signal_time ∈ "
         f"[t-{trigger_window_days}, t-{trigger_eval_gap_days}]`（calendar days）。",
-        f"- Shadow eval window（model_pool）：`[t-30, t-10]`（shadow_window=20，與 trigger 不重疊）。",
-        f"- Shadow warm-up gap：`{shadow_warmup_days}` 日（新候選訓練 cutoff 額外往前推，避免 IS leakage）。",
+        f"- Shadow eval window（model_pool）：以實際交易日切窗，結束日為 "
+        f"`t-{purge_days + horizon_days}` 個交易日，往前取 `{shadow_window}` 個交易日；"
+        "`shadow_fwd` 只使用 `label_available_at <= t` 的成熟標籤。",
+        f"- Shadow warm-up gap：`{shadow_warmup_days}` 個交易日（新候選訓練 cutoff 額外往前推，避免 IS leakage）。",
         cost_block,
         "",
         "## 對照結果",
@@ -843,6 +1001,36 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--max-turnover", type=float, default=1.0, help="Maximum one-way turnover per rebalance.")
     p.add_argument("--min-holding-days", type=int, default=0, help="Minimum holding age before rank-based selling.")
     p.add_argument(
+        "--hard-exit-score-threshold",
+        type=float,
+        default=None,
+        help="持股滿 hard-exit-min-holding-days 後，signal_score <= threshold 即強制賣出。",
+    )
+    p.add_argument(
+        "--hard-exit-min-holding-days",
+        type=int,
+        default=None,
+        help="hard exit / tail cleanup 的最小持倉天數；預設沿用 --min-holding-days。",
+    )
+    p.add_argument(
+        "--tail-cleanup-weight",
+        type=float,
+        default=0.0,
+        help="持股滿最小天數後，權重低於此門檻的殘餘小倉位會被清掉，例如 0.005 = 50 bps。",
+    )
+    p.add_argument(
+        "--renormalize-after-exit-cleanup",
+        action="store_true",
+        help="清掉持股後將剩餘多頭權重放大回原 gross exposure；預設保留現金以便診斷。",
+    )
+    p.add_argument(
+        "--placebo-mode",
+        choices=["none", "shuffle_signal"],
+        default="none",
+        help="Placebo 模式；shuffle_signal 會每日打亂 signal_score 與股票的對應關係。",
+    )
+    p.add_argument("--placebo-seed", type=int, default=0, help="Placebo shuffle random seed。")
+    p.add_argument(
         "--objective",
         choices=["forward_return", "net_return_proxy"],
         default="forward_return",
@@ -866,12 +1054,63 @@ def _parse_args() -> argparse.Namespace:
                    help="若指定，覆寫三細項（單跑模式用），通常透過 --cost-sweep 而非單一值")
     p.add_argument("--cost-sweep", nargs="+", type=float, default=None,
                    help="成本敏感度 sweep：例如 --cost-sweep 0 0.2 0.4 0.6")
+    p.add_argument(
+        "--execution-price",
+        choices=["close", "next_open", "next_vwap"],
+        default="close",
+        help="PnL 成交價假設：close=舊 close-to-close proxy；next_open/next_vwap=T 日收盤訊號、T+1 才成交",
+    )
     p.add_argument("--trigger-window-days", type=int, default=60,
                    help="trigger 用 IC/Sharpe 計算回看上限（calendar days），預設 [t-60, ...]")
     p.add_argument("--trigger-eval-gap", type=int, default=20,
                    help="trigger 用 IC/Sharpe 排除最近（calendar days），預設 [..., t-20]")
     p.add_argument("--shadow-warmup-days", type=int, default=5,
                    help="model_pool shadow 候選的訓練 cutoff 額外往前推 N 日")
+    p.add_argument("--model-pool-diagnostics", action="store_true",
+                   help="對 model_pool 輸出 model_pool_decisions.csv 診斷檔")
+    p.add_argument("--similarity-threshold", type=float, default=0.5,
+                   help="model_pool regime similarity threshold")
+    p.add_argument("--pool-top-k", type=int, default=3,
+                   help="model_pool shadow 階段最多納入幾個 reused 候選")
+    p.add_argument("--pool-regime-window", type=int, default=60,
+                   help="model_pool regime fingerprint 回看天數")
+    p.add_argument("--shadow-window", type=int, default=20,
+                   help="model_pool shadow evaluation window 交易日數")
+    p.add_argument(
+        "--model-pool-selection-metric",
+        choices=["ic", "hit_rate", "sharpe", "topk_gross_return", "topk_net_return"],
+        default="ic",
+        help="model_pool shadow selector 使用的排序指標；topk_net_return 會使用成本感知 top-k proxy",
+    )
+    p.add_argument(
+        "--model-pool-reuse-min-score",
+        type=float,
+        default=None,
+        help="reused candidate 的最低 shadow selector 分數；未達門檻則退回 current/new",
+    )
+    p.add_argument(
+        "--model-pool-reuse-margin",
+        type=float,
+        default=0.0,
+        help="reused candidate 必須比最佳 current/new 高出的 selector margin",
+    )
+    p.add_argument(
+        "--model-pool-trigger-mode",
+        choices=["triggered", "scheduled"],
+        default="triggered",
+        help="model_pool 何時進入 shadow compare；scheduled 會沿用 scheduled_20 cadence。",
+    )
+    p.add_argument(
+        "--frozen-config",
+        default=None,
+        help="套用 frozen alpha selector 規格；會覆寫 selector/portfolio/execution/cost/label 參數。",
+    )
+    p.add_argument(
+        "--frozen-execution",
+        choices=["primary", "secondary", "next_vwap", "next_open"],
+        default="primary",
+        help="frozen config 的執行價格選擇；primary=next_vwap、secondary=next_open。",
+    )
     p.add_argument("--train-window-days", type=int, default=None,
                    help="訓練窗口（calendar days）。None=expanding（預設）；正整數=rolling")
     p.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
@@ -880,15 +1119,20 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--run-tag", default=None)
     p.add_argument(
         "--alpha-source", choices=["python", "dolphindb"], default="python",
-        help="alpha 來源：python=近似 15 個 / dolphindb=真實 WQ101",
+        help="alpha 來源：python=pandas WQ101 主路徑 / dolphindb=real mode 備援",
     )
     p.add_argument(
         "--alpha-ids", nargs="+", default=None,
-        help="限制 alpha 子集（僅 dolphindb 生效）",
+        help="限制 alpha 子集，例如 --alpha-ids wq001 wq014 wq041",
     )
     p.add_argument(
         "--skip-effective-filter", action="store_true",
         help="跳過 effective_alphas.json 過濾（跑全 101 建議開）",
+    )
+    p.add_argument(
+        "--exclude-indclass-cap-alphas",
+        action="store_true",
+        help="排除需要 placeholder indclass/cap 的 WQ101 alpha，用於保守 ablation",
     )
     return p.parse_args()
 
@@ -896,7 +1140,11 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     start = datetime.strptime(args.start, "%Y-%m-%d").date()
-    csv_path = args.csv or DATA_SOURCE_DEFAULTS[args.data_source]
+    if args.frozen_config and args.csv is None:
+        frozen_spec = load_frozen_alpha_selector(args.frozen_config)
+        csv_path = frozen_spec.simulation_overrides(args.frozen_execution)["csv_path"]
+    else:
+        csv_path = args.csv or DATA_SOURCE_DEFAULTS[args.data_source]
     if args.end:
         end = datetime.strptime(args.end, "%Y-%m-%d").date()
     else:
@@ -929,10 +1177,26 @@ def main() -> None:
         commission_rate=args.commission_rate,
         tax_rate=args.tax_rate,
         round_trip_cost_pct=args.round_trip_cost_pct,
+        execution_price=args.execution_price,
+        hard_exit_score_threshold=args.hard_exit_score_threshold,
+        hard_exit_min_holding_days=args.hard_exit_min_holding_days,
+        tail_cleanup_weight=args.tail_cleanup_weight,
+        renormalize_after_exit_cleanup=args.renormalize_after_exit_cleanup,
+        placebo_mode=args.placebo_mode,
+        placebo_seed=args.placebo_seed,
         cost_sweep=args.cost_sweep,
         trigger_window_days=args.trigger_window_days,
         trigger_eval_gap_days=args.trigger_eval_gap,
         shadow_warmup_days=args.shadow_warmup_days,
+        model_pool_diagnostics=args.model_pool_diagnostics,
+        similarity_threshold=args.similarity_threshold,
+        pool_top_k=args.pool_top_k,
+        pool_regime_window=args.pool_regime_window,
+        shadow_window=args.shadow_window,
+        model_pool_selection_metric=args.model_pool_selection_metric,
+        model_pool_reuse_min_score=args.model_pool_reuse_min_score,
+        model_pool_reuse_margin=args.model_pool_reuse_margin,
+        model_pool_trigger_mode=args.model_pool_trigger_mode,
         train_window_days=args.train_window_days,
         symbols=args.symbols,
         min_turnover_ntd=args.min_turnover_ntd,
@@ -941,7 +1205,11 @@ def main() -> None:
         alpha_source=args.alpha_source,
         alpha_ids=args.alpha_ids,
         skip_effective_filter=args.skip_effective_filter,
+        exclude_indclass_cap_alphas=args.exclude_indclass_cap_alphas,
+        data_source=args.data_source,
         allow_yfinance=args.allow_yfinance,
+        frozen_config=args.frozen_config,
+        frozen_execution=args.frozen_execution,
     )
 
     print("\n=== A/B 實驗完成 ===")

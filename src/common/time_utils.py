@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Sequence
 
-import numpy as np
 import pandas as pd
 
 

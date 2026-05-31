@@ -37,7 +37,6 @@ import pandas as pd
 from src.adaptation.model_registry import ModelRegistryManager
 from src.common.db import get_pg_connection
 from src.common.logging import get_logger
-from src.config.constants import AdaptationPolicy
 
 logger = get_logger(__name__)
 

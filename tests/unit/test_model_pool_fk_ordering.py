@@ -13,9 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from src.adaptation.model_pool_strategy import ModelPoolController
 

@@ -15,7 +15,6 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-import numpy as np
 import pandas as pd
 import pytest
 

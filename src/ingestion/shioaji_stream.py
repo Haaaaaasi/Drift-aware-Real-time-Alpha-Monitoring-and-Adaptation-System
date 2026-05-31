@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
-import pandas as pd
 
 from src.common.logging import get_logger
 

@@ -13,7 +13,6 @@ from src.common.metrics import (
     profit_factor,
     rank_information_coefficient,
     sharpe_ratio,
-    turnover,
 )
 
 logger = get_logger(__name__)

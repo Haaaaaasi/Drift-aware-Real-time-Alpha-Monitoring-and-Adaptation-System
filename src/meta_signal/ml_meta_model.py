@@ -26,7 +26,9 @@ Key design
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -39,6 +41,7 @@ from src.common.metrics import (
     information_coefficient,
     rank_information_coefficient,
 )
+from src.alpha_selection.base import hash_alpha_ids
 
 logger = get_logger(__name__)
 
@@ -143,7 +146,11 @@ class MLMetaModel:
         for col in self._feature_columns:
             self._feature_importance.setdefault(col, 0.0)
 
-        self._holdout_metrics = cv_metrics
+        feature_columns_hash = hash_alpha_ids(self._feature_columns)
+        self._holdout_metrics = {
+            **cv_metrics,
+            "feature_columns_hash": feature_columns_hash,
+        }
         self._trained_at = datetime.utcnow()
         dates = X.index.get_level_values("tradetime")
         self._training_window = (
@@ -153,10 +160,12 @@ class MLMetaModel:
 
         result = {
             "model_id": self._model_id,
-            "holdout_metrics": cv_metrics,
+            "holdout_metrics": self._holdout_metrics,
             "feature_importance": self._feature_importance,
             "n_train": int(len(X)),
             "n_features": len(self._feature_columns),
+            "feature_columns": list(self._feature_columns),
+            "feature_columns_hash": feature_columns_hash,
         }
         logger.info("ml_meta_model_trained", **{k: v for k, v in result.items() if k != "feature_importance"})
         return result
@@ -192,7 +201,7 @@ class MLMetaModel:
     # Optional registry hook
     # ------------------------------------------------------------------
 
-    def register_to_registry(self) -> bool:
+    def register_to_registry(self, artifact_path: str = "") -> bool:
         """Attempt to persist this model to the PostgreSQL model_registry.
 
         Swallows connection errors so offline runs and unit tests without a
@@ -212,11 +221,100 @@ class MLMetaModel:
                 features_used=self._feature_columns,
                 hyperparams=self._hyperparams,
                 holdout_metrics=self._holdout_metrics,
+                artifact_path=artifact_path,
             )
             return True
         except Exception as exc:  # pragma: no cover — network/DB dependent
             logger.warning("ml_meta_register_failed", error=str(exc))
             return False
+
+    # ------------------------------------------------------------------
+    # Artifact persistence
+    # ------------------------------------------------------------------
+
+    def save_artifact(
+        self,
+        artifact_dir: str | Path,
+        *,
+        extra_manifest: dict[str, Any] | None = None,
+    ) -> Path:
+        """將已訓練模型與可回放 manifest 寫成 production artifact。"""
+        if self._model is None or self._trained_at is None:
+            raise RuntimeError("Model not trained. Call train() before save_artifact().")
+
+        path = Path(artifact_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        model_path = path / "model.json"
+        manifest_path = path / "manifest.json"
+
+        self._model.save_model(model_path)
+        train_start, train_end = self._training_window or (None, None)
+        manifest: dict[str, Any] = {
+            "artifact_version": "ml_meta_model_v1",
+            "model_type": "xgboost_regressor",
+            "model_id": self._model_id,
+            "xgboost_model_path": model_path.name,
+            "saved_at": datetime.utcnow().isoformat(),
+            "trained_at": self._trained_at.isoformat(),
+            "training_window_start": train_start.isoformat() if train_start else None,
+            "training_window_end": train_end.isoformat() if train_end else None,
+            "feature_columns": list(self._feature_columns),
+            "feature_columns_hash": self._holdout_metrics.get("feature_columns_hash"),
+            "hyperparams": self._hyperparams,
+            "objective": self._objective,
+            "proxy_top_k": self._proxy_top_k,
+            "proxy_round_trip_cost": self._proxy_round_trip_cost,
+            "holdout_metrics": self._holdout_metrics,
+            "feature_importance": self._feature_importance,
+        }
+        if extra_manifest:
+            manifest.update(extra_manifest)
+
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        logger.info("ml_meta_artifact_saved", model_id=self._model_id, path=str(path))
+        return path
+
+    @classmethod
+    def load_artifact(cls, artifact_dir: str | Path) -> "MLMetaModel":
+        """從 production artifact 載入模型；不重新訓練。"""
+        path = Path(artifact_dir)
+        manifest_path = path / "manifest.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"MLMetaModel manifest not found: {manifest_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("artifact_version") != "ml_meta_model_v1":
+            raise ValueError(
+                f"Unsupported MLMetaModel artifact version: {manifest.get('artifact_version')!r}"
+            )
+
+        model = cls(
+            hyperparams=dict(manifest.get("hyperparams") or {}),
+            feature_columns=list(manifest.get("feature_columns") or []),
+            objective=str(manifest.get("objective", "forward_return")),
+            proxy_top_k=int(manifest.get("proxy_top_k", 10)),
+            proxy_round_trip_cost=float(manifest.get("proxy_round_trip_cost", 0.005)),
+        )
+        model._model_id = str(manifest["model_id"])
+        model._trained_at = _parse_datetime_or_none(manifest.get("trained_at"))
+        start = _parse_datetime_or_none(manifest.get("training_window_start"))
+        end = _parse_datetime_or_none(manifest.get("training_window_end"))
+        model._training_window = (start, end) if start and end else None
+        model._holdout_metrics = dict(manifest.get("holdout_metrics") or {})
+        model._feature_importance = {
+            str(k): float(v)
+            for k, v in dict(manifest.get("feature_importance") or {}).items()
+        }
+
+        xgb_path = path / str(manifest.get("xgboost_model_path", "model.json"))
+        if not xgb_path.exists():
+            raise FileNotFoundError(f"XGBoost model artifact not found: {xgb_path}")
+        model._model = xgb.XGBRegressor(**model._hyperparams)
+        model._model.load_model(xgb_path)
+        logger.info("ml_meta_artifact_loaded", model_id=model._model_id, path=str(path))
+        return model
 
     # ------------------------------------------------------------------
     # Internals
@@ -400,9 +498,33 @@ class MLMetaModel:
         return self._model_id
 
     @property
+    def feature_columns(self) -> list[str]:
+        return list(self._feature_columns)
+
+    @property
     def feature_importance(self) -> dict[str, float]:
         return self._feature_importance
 
     @property
     def holdout_metrics(self) -> dict[str, float]:
         return self._holdout_metrics
+
+    @property
+    def trained_at(self) -> datetime | None:
+        return self._trained_at
+
+    @property
+    def training_window(self) -> tuple[datetime, datetime] | None:
+        return self._training_window
+
+    @property
+    def hyperparams(self) -> dict[str, Any]:
+        return dict(self._hyperparams)
+
+
+def _parse_datetime_or_none(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))

@@ -89,6 +89,17 @@ class TestSimulateStrategies:
         retrains = pd.read_csv(result["retrain_log_path"])
         assert len(retrains) == 1, f"strategy=none 應只訓練 1 次，實際 {len(retrains)}"
         assert retrains.iloc[0]["reason"] == "initial_train"
+        assert "feature_columns_hash" in retrains.columns
+        assert "selector_snapshot_hash" in retrains.columns
+        assert retrains["feature_columns_hash"].notna().all()
+        assert retrains["selector_snapshot_hash"].notna().all()
+        assert result["alpha_selection_snapshots_path"] is not None
+        assert Path(result["alpha_selection_snapshots_path"]).exists()
+        snapshots = pd.read_csv(result["alpha_selection_snapshots_path"])
+        scores = pd.read_csv(result["alpha_scores_path"])
+        assert snapshots.iloc[0]["selector_name"] == "static_is"
+        assert "feature_store_version" in snapshots.columns
+        assert {"alpha_id", "selected", "weight"}.issubset(scores.columns)
 
     def test_strategy_scheduled_respects_cadence(self, synthetic_csv, sim_period, tmp_path):
         start, end = sim_period
@@ -270,8 +281,15 @@ class TestABExperiment:
         assert Path(config["benchmark_path"]).exists()
 
     def test_default_strategies_catalog(self):
-        """DEFAULT_STRATEGIES 應包含五種預期策略（含 model_pool）。"""
-        expected = {"none", "scheduled_20", "scheduled_60", "triggered", "model_pool"}
+        """DEFAULT_STRATEGIES 應包含正式 A/B 策略與 regime stress 補測策略。"""
+        expected = {
+            "none",
+            "scheduled_20",
+            "scheduled_40",
+            "scheduled_60",
+            "triggered",
+            "model_pool",
+        }
         assert set(DEFAULT_STRATEGIES) == expected
         # 各配置合法性
         for key, cfg in DEFAULT_STRATEGIES.items():

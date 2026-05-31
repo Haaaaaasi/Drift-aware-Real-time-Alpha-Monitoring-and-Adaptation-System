@@ -69,16 +69,27 @@ MVP_V1_ALPHA_IDS: list[str] = [
 # 全部 101 個 WQ101 alpha ID（wq001..wq101）— MVP v3 擴充使用
 WQ101_ALL_ALPHA_IDS: list[str] = [f"wq{n:03d}" for n in range(1, 102)]
 
-# 需要 indclass panel 的 alpha 子集合（產業分類；目前以 hash-based proxy 取代真實產業碼）
+# 需要 indclass panel 的 alpha 子集合。
+#
+# 注意：目前 TEJ parquet 只含 OHLCV；load_csv_data() 仍以 placeholder 產生 indclass。
+# 正式研究若尚未接入真實產業分類，請用 --exclude-indclass-cap-alphas 做保守 ablation。
 WQ101_INDCLASS_ALPHA_IDS: list[str] = [
     "wq048", "wq058", "wq059", "wq063", "wq067", "wq069", "wq070",
     "wq076", "wq079", "wq080", "wq082", "wq087", "wq089", "wq090",
     "wq091", "wq093", "wq097", "wq100",
 ]
 
-# 純量價 alpha（不需產業碼）— 83 個
+# 需要 cap panel 的 alpha 子集合。目前 cap 也是 close * 1,000,000 proxy。
+WQ101_CAP_ALPHA_IDS: list[str] = ["wq056"]
+
+# 需要 placeholder 結構資料（indclass 或 cap）的 alpha。
+WQ101_INDCLASS_OR_CAP_ALPHA_IDS: list[str] = sorted(
+    set(WQ101_INDCLASS_ALPHA_IDS) | set(WQ101_CAP_ALPHA_IDS)
+)
+
+# 純量價 alpha（不需產業碼 / 市值 proxy）— 82 個
 WQ101_PURE_PRICE_ALPHA_IDS: list[str] = [
-    aid for aid in WQ101_ALL_ALPHA_IDS if aid not in set(WQ101_INDCLASS_ALPHA_IDS)
+    aid for aid in WQ101_ALL_ALPHA_IDS if aid not in set(WQ101_INDCLASS_OR_CAP_ALPHA_IDS)
 ]
 
 # Deprecated: 舊 DolphinDB/yfinance 時代的 45-alpha 常數，只保留給歷史相容。

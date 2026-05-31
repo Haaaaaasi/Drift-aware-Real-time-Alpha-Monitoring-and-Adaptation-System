@@ -26,17 +26,13 @@ import pytest
 
 from src.common.metrics import (
     information_coefficient,
-    ks_test_drift,
-    population_stability_index,
 )
-from src.config.constants import AlertSeverity
 from src.labeling.label_generator import LabelGenerator
 from src.meta_signal.ml_meta_model import MLMetaModel
 from src.meta_signal.rule_based import RuleBasedSignalGenerator
 from src.monitoring.alpha_monitor import AlphaMonitor
 from src.monitoring.data_monitor import DataMonitor
 from src.monitoring.model_monitor import ModelMonitor
-from src.monitoring.strategy_monitor import StrategyMonitor
 from src.adaptation.performance_trigger import PerformanceTriggeredAdapter
 from src.adaptation.shadow_evaluator import ShadowEvaluator
 
@@ -533,7 +529,6 @@ class TestDBDrivenTrigger:
 
     def test_db_driven_trigger_fires(self):
         """mock DB 返回全負 rolling_ic → check_trigger_from_db() 應回傳 (True, ...)。"""
-        import psycopg2
 
         mock_ic_df = pd.DataFrame({
             "metric_time": pd.date_range("2024-01-01", periods=5, freq="D"),
@@ -546,16 +541,21 @@ class TestDBDrivenTrigger:
 
         mock_conn = MagicMock()
         mock_get_pg_connection = MagicMock(return_value=mock_conn)
-        # pd.read_sql 第一次返回 IC，第二次返回 Sharpe
-        mock_read_sql = MagicMock(side_effect=[mock_ic_df, mock_sharpe_df])
+        empty = pd.DataFrame()
+        mock_read_sql = MagicMock(
+            side_effect=[
+                pd.DataFrame({"model_id": ["ml_prod"]}),
+                empty,
+                mock_ic_df,
+                mock_sharpe_df,
+                empty,
+                empty,
+            ]
+        )
 
         with (
             patch("src.common.db.get_pg_connection", mock_get_pg_connection),
             patch("pandas.read_sql", mock_read_sql),
-            patch(
-                "src.monitoring.alert_manager.AlertManager.get_unacknowledged_critical_count",
-                return_value=0,
-            ),
             patch("src.adaptation.performance_trigger.ModelRegistryManager"),
         ):
             adapter = PerformanceTriggeredAdapter(
@@ -567,7 +567,7 @@ class TestDBDrivenTrigger:
         assert triggered is True, f"預期觸發，但 reason={reason!r}"
         assert "IC" in reason.upper()
         mock_get_pg_connection.assert_called_once()
-        assert mock_read_sql.call_count == 2
+        assert mock_read_sql.call_count == 6
 
     def test_db_driven_trigger_fallback(self):
         """get_pg_connection() 拋 OperationalError → 回傳 (False, 'db_unavailable')，不拋例外。"""

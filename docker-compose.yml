@@ -35,6 +35,34 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: darams-api
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-darams}
+      POSTGRES_USER: ${POSTGRES_USER:-darams}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-darams_dev}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DOLPHINDB_HOST: dolphindb
+      DOLPHINDB_PORT: 8848
+      DOLPHINDB_USER: ${DOLPHINDB_USER:-admin}
+      DOLPHINDB_PASSWORD: ${DOLPHINDB_PASSWORD:-123456}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://localhost:5000}
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:10.2.0
     container_name: darams-grafana

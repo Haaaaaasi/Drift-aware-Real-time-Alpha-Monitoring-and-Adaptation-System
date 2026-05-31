@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +24,6 @@ import pandas as pd
 from pipelines.daily_batch_pipeline import compute_python_alphas, load_csv_data
 from src.adaptation.performance_trigger import PerformanceTriggeredAdapter
 from src.adaptation.recurring_concept import RecurringConceptPool
-from src.adaptation.scheduler import ScheduledRetrainer
 from src.common.logging import get_logger, setup_logging
 from src.labeling.label_generator import LabelGenerator
 from src.meta_signal.ml_meta_model import MLMetaModel
@@ -72,8 +70,6 @@ def main() -> None:
     bars_prod = bars[(bars["tradetime"] >= PROD_START) & (bars["tradetime"] <= PROD_END)]
     alphas_ref = alphas[(alphas["tradetime"] >= REF_START) & (alphas["tradetime"] <= REF_END)]
     alphas_prod = alphas[(alphas["tradetime"] >= PROD_START) & (alphas["tradetime"] <= PROD_END)]
-    fwd5_ref = fwd5[(fwd5.index.get_level_values("tradetime") >= REF_START)
-                    & (fwd5.index.get_level_values("tradetime") <= REF_END)]
     fwd5_prod = fwd5[(fwd5.index.get_level_values("tradetime") >= PROD_START)
                      & (fwd5.index.get_level_values("tradetime") <= PROD_END)]
 
@@ -171,7 +167,6 @@ def main() -> None:
 
     # Policy 1: Scheduled
     print("\n[Policy 1] Scheduled Retrain（每 7 日重訓）")
-    sched = ScheduledRetrainer(retrain_interval_days=7)
     n_days = (PROD_END - PROD_START).days
     n_retrain = n_days // 7
     print(f"  → 從 {PROD_START.date()} 到 {PROD_END.date()} 共 {n_days} 日")
@@ -198,7 +193,6 @@ def main() -> None:
                 ic_d = np.corrcoef(merged.values, actual_d.values[:len(merged)])[0, 1]
                 if not np.isnan(ic_d):
                     daily_ics.append(ic_d)
-    rolling_ic_recent = pd.Series(daily_ics).rolling(10).mean().dropna()
     rolling_sharpe = daily_ret.rolling(20).apply(
         lambda x: (x.mean() / x.std() * np.sqrt(252)) if x.std() > 0 else 0
     ).dropna()
@@ -216,7 +210,6 @@ def main() -> None:
     # Policy 3: Recurring concept — 離線示範 fingerprint + cosine similarity
     print("\n[Policy 3] Recurring Concept Pool（找歷史相似 regime）")
     pool = RecurringConceptPool(similarity_threshold=0.7)
-    ref_fp = pool.compute_regime_fingerprint(bars_ref)
     prod_fp = pool.compute_regime_fingerprint(bars_prod)
     # 額外抓 2024 Q3 / 2024 Q4 / 2025 H1 三段歷史 regime 做比對
     historical_periods = {

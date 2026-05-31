@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>套件與組件工作流地圖</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-soft: #eef3f6;
+      --ink: #1d232c;
+      --muted: #657083;
+      --line: #d7dde5;
+      --accent: #087f8c;
+      --accent-2: #c7502f;
+      --active: #0b7285;
+      --edge: #aeb8c5;
+      --shadow: 0 10px 30px rgba(29, 35, 44, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 320px minmax(520px, 1fr) 360px;
+      min-height: 100vh;
+    }
+
+    .sidebar,
+    .inspector {
+      background: var(--surface);
+      border-color: var(--line);
+      border-style: solid;
+      overflow: auto;
+    }
+
+    .sidebar {
+      border-width: 0 1px 0 0;
+    }
+
+    .inspector {
+      border-width: 0 0 0 1px;
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.25;
+    }
+
+    .brand p,
+    .hint,
+    .meta-line,
+    .empty-state {
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: grid;
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .input,
+    .file-label {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 9px 11px;
+    }
+
+    .file-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--active);
+    }
+
+    .file-label input {
+      display: none;
+    }
+
+    .section-title {
+      margin: 20px 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .flow-list,
+    .package-list,
+    .step-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .flow-button,
+    .component-button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      text-align: left;
+      padding: 11px 12px;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .flow-button:hover,
+    .component-button:hover,
+    .flow-button.active,
+    .component-button.active {
+      border-color: var(--active);
+      background: #f0fbfc;
+    }
+
+    .flow-button.active {
+      box-shadow: inset 3px 0 0 var(--active);
+    }
+
+    .flow-name,
+    .component-name {
+      display: block;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .flow-category,
+    .component-package {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(246, 247, 249, 0.92);
+    }
+
+    .topbar h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .status-pill {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 11px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .map-wrap {
+      padding: 22px;
+      min-width: 0;
+      overflow: auto;
+    }
+
+    .map-shell {
+      min-width: 900px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      background:
+        linear-gradient(rgba(215, 221, 229, 0.45) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(215, 221, 229, 0.45) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    .edge-path {
+      fill: none;
+      stroke: var(--edge);
+      stroke-width: 2;
+      opacity: 0.36;
+      transition: stroke 180ms ease, stroke-width 180ms ease, opacity 180ms ease;
+    }
+
+    .edge-path.active {
+      stroke: var(--active);
+      stroke-width: 4;
+      opacity: 1;
+    }
+
+    .edge-label {
+      fill: var(--muted);
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .edge-label.active {
+      opacity: 1;
+    }
+
+    .node {
+      cursor: pointer;
+    }
+
+    .node rect {
+      fill: var(--surface);
+      stroke: var(--line);
+      stroke-width: 1.5;
+      transition: fill 180ms ease, stroke 180ms ease, stroke-width 180ms ease, opacity 180ms ease;
+    }
+
+    .node.active rect {
+      fill: #e6f7f9;
+      stroke: var(--active);
+      stroke-width: 3;
+    }
+
+    .node.focus rect {
+      fill: #fff6ef;
+      stroke: var(--accent-2);
+      stroke-width: 3;
+    }
+
+    .node.dim rect,
+    .node.dim text {
+      opacity: 0.32;
+    }
+
+    .node-title {
+      fill: var(--ink);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .node-subtitle {
+      fill: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 16px;
+      border-top: 1px solid var(--line);
+      background: var(--surface-soft);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend-swatch {
+      width: 16px;
+      height: 3px;
+      background: var(--edge);
+      border-radius: 99px;
+    }
+
+    .legend-swatch.active {
+      height: 4px;
+      background: var(--active);
+    }
+
+    .flow-heading {
+      margin-bottom: 12px;
+    }
+
+    .flow-heading h2 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      line-height: 1.3;
+    }
+
+    .summary {
+      color: var(--muted);
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    .step-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 13px;
+    }
+
+    .step-card strong {
+      display: block;
+      margin-bottom: 6px;
+      line-height: 1.35;
+    }
+
+    .step-card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .payload {
+      display: inline-block;
+      margin-top: 8px;
+      max-width: 100%;
+      border: 1px solid #cad7dc;
+      border-radius: 6px;
+      background: #f4fafb;
+      color: #24525a;
+      padding: 5px 7px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .component-detail {
+      border-top: 1px solid var(--line);
+      margin-top: 18px;
+      padding-top: 18px;
+    }
+
+    .component-detail h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    @media (max-width: 1180px) {
+      .app {
+        grid-template-columns: 300px minmax(500px, 1fr);
+      }
+
+      .inspector {
+        grid-column: 1 / -1;
+        border-width: 1px 0 0;
+      }
+    }
+
+    @media (max-width: 840px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar,
+      .inspector {
+        border-width: 0 0 1px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .map-wrap {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar panel">
+      <div class="brand">
+        <h1 id="appTitle">套件與組件工作流地圖</h1>
+        <p id="appDescription">載入 JSON 後，點擊流程即可高亮顯示套件之間的資訊流。</p>
+      </div>
+
+      <div class="toolbar">
+        <input class="input" id="searchInput" type="search" placeholder="搜尋流程、套件或組件">
+        <label class="file-label">
+          匯入流程 JSON
+          <input id="fileInput" type="file" accept="application/json,.json">
+        </label>
+      </div>
+
+      <div class="section-title">動作與流程</div>
+      <div class="flow-list" id="flowList"></div>
+
+      <div class="section-title">套件與組件</div>
+      <div class="package-list" id="componentList"></div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <h2 id="selectedTitle">尚未選擇流程</h2>
+          <p class="meta-line" id="selectedMeta">請從左側選擇一個動作，或匯入自己的流程 JSON。</p>
+        </div>
+        <div class="status-pill" id="dataStatus">等待資料</div>
+      </header>
+
+      <div class="map-wrap">
+        <div class="map-shell">
+          <svg id="workflowMap" viewBox="0 0 940 640" role="img" aria-label="工作流元件圖">
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L8,3 z" fill="#0b7285"></path>
+              </marker>
+            </defs>
+            <g id="edgeLayer"></g>
+            <g id="nodeLayer"></g>
+          </svg>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-swatch"></span>未選取流向</span>
+            <span class="legend-item"><span class="legend-swatch active"></span>目前流程流向</span>
+            <span class="legend-item">橘框代表目前聚焦的組件</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="inspector panel">
+      <div class="flow-heading">
+        <h2 id="inspectorTitle">流程註解</h2>
+        <p class="summary" id="inspectorSummary">選擇流程後，這裡會列出每一步的資料傳遞、payload 與說明。</p>
+      </div>
+
+      <div class="section-title">傳遞步驟</div>
+      <div class="step-list" id="stepList">
+        <p class="empty-state">尚無流程步驟。</p>
+      </div>
+
+      <div class="component-detail" id="componentDetail">
+        <h3>組件資訊</h3>
+        <p class="summary">點擊地圖或左側清單中的組件，可查看它的 package、類型與描述。</p>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const DEFAULT_JSON_URL = "workflow_flows.json";
+    const state = {
+      data: null,
+      selectedFlowId: null,
+      focusedComponentId: null,
+      search: ""
+    };
+
+    const els = {
+      appTitle: document.getElementById("appTitle"),
+      appDescription: document.getElementById("appDescription"),
+      searchInput: document.getElementById("searchInput"),
+      fileInput: document.getElementById("fileInput"),
+      flowList: document.getElementById("flowList"),
+      componentList: document.getElementById("componentList"),
+      selectedTitle: document.getElementById("selectedTitle"),
+      selectedMeta: document.getElementById("selectedMeta"),
+      dataStatus: document.getElementById("dataStatus"),
+      edgeLayer: document.getElementById("edgeLayer"),
+      nodeLayer: document.getElementById("nodeLayer"),
+      inspectorTitle: document.getElementById("inspectorTitle"),
+      inspectorSummary: document.getElementById("inspectorSummary"),
+      stepList: document.getElementById("stepList"),
+      componentDetail: document.getElementById("componentDetail")
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function setStatus(message) {
+      els.dataStatus.textContent = message;
+    }
+
+    function validateData(data) {
+      if (!data || !Array.isArray(data.components) || !Array.isArray(data.flows)) {
+        throw new Error("JSON 必須包含 components 與 flows 陣列。");
+      }
+
+      const ids = new Set(data.components.map((component) => component.id));
+      data.flows.forEach((flow) => {
+        if (!Array.isArray(flow.steps)) {
+          throw new Error(`流程 ${flow.id || flow.name} 缺少 steps 陣列。`);
+        }
+        flow.steps.forEach((step) => {
+          if (!ids.has(step.from) || !ids.has(step.to)) {
+            throw new Error(`流程 ${flow.id || flow.name} 參照不存在的組件：${step.from} -> ${step.to}`);
+          }
+        });
+      });
+    }
+
+    function loadData(data, sourceLabel) {
+      validateData(data);
+      state.data = data;
+      state.selectedFlowId = data.flows[0]?.id || null;
+      state.focusedComponentId = null;
+      els.appTitle.textContent = data.meta?.title || "套件與組件工作流地圖";
+      els.appDescription.textContent = data.meta?.description || "點擊流程即可高亮顯示套件之間的資訊流。";
+      setStatus(`${sourceLabel}：${data.components.length} 個組件，${data.flows.length} 個流程`);
+      render();
+    }
+
+    async function loadDefaultData() {
+      try {
+        const response = await fetch(DEFAULT_JSON_URL, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        loadData(data, DEFAULT_JSON_URL);
+      } catch (error) {
+        setStatus("未能自動載入 JSON，可用左側匯入");
+        els.flowList.innerHTML = `<p class="empty-state">無法讀取 ${escapeHtml(DEFAULT_JSON_URL)}。若你是直接用 file:// 開啟 HTML，瀏覽器可能會阻擋本機 JSON 讀取，請改用本機 HTTP server 或手動匯入 JSON。</p>`;
+        els.componentList.innerHTML = "";
+      }
+    }
+
+    function getSelectedFlow() {
+      return state.data?.flows.find((flow) => flow.id === state.selectedFlowId) || null;
+    }
+
+    function getComponent(id) {
+      return state.data?.components.find((component) => component.id === id) || null;
+    }
+
+    function flowMatches(flow, query) {
+      if (!query) return true;
+      const text = [
+        flow.name,
+        flow.category,
+        flow.summary,
+        ...flow.steps.flatMap((step) => [step.label, step.payload, step.annotation])
+      ].join(" ").toLowerCase();
+      return text.includes(query);
+    }
+
+    function componentMatches(component, query) {
+      if (!query) return true;
+      const text = [component.name, component.package, component.kind, component.description].join(" ").toLowerCase();
+      return text.includes(query);
+    }
+
+    function render() {
+      if (!state.data) return;
+      renderFlowList();
+      renderComponentList();
+      renderMap();
+      renderInspector();
+    }
+
+    function renderFlowList() {
+      const query = state.search;
+      const flows = state.data.flows.filter((flow) => flowMatches(flow, query));
+      els.flowList.innerHTML = flows.map((flow) => `
+        <button class="flow-button ${flow.id === state.selectedFlowId ? "active" : ""}" data-flow-id="${escapeHtml(flow.id)}">
+          <span class="flow-name">${escapeHtml(flow.name)}</span>
+          <span class="flow-category">${escapeHtml(flow.category || "未分類")} · ${flow.steps.length} 步</span>
+        </button>
+      `).join("") || `<p class="empty-state">找不到符合搜尋條件的流程。</p>`;
+
+      els.flowList.querySelectorAll("[data-flow-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.selectedFlowId = button.dataset.flowId;
+          state.focusedComponentId = null;
+          render();
+        });
+      });
+    }
+
+    function renderComponentList() {
+      const query = state.search;
+      const components = state.data.components.filter((component) => componentMatches(component, query));
+      const byPackage = components.reduce((groups, component) => {
+        const key = component.package || "未分類";
+        groups[key] = groups[key] || [];
+        groups[key].push(component);
+        return groups;
+      }, {});
+
+      els.componentList.innerHTML = Object.entries(byPackage).map(([packageName, items]) => `
+        <div>
+          <div class="section-title">${escapeHtml(packageName)}</div>
+          <div class="package-list">
+            ${items.map((component) => `
+              <button class="component-button ${component.id === state.focusedComponentId ? "active" : ""}" data-component-id="${escapeHtml(component.id)}">
+                <span class="component-name">${escapeHtml(component.name)}</span>
+                <span class="component-package">${escapeHtml(component.kind || "component")}</span>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `).join("") || `<p class="empty-state">找不到符合搜尋條件的組件。</p>`;
+
+      els.componentList.querySelectorAll("[data-component-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.focusedComponentId = button.dataset.componentId;
+          render();
+        });
+      });
+    }
+
+    function renderMap() {
+      const flow = getSelectedFlow();
+      const activeNodeIds = new Set();
+      const activeEdgeKeys = new Set();
+
+      if (flow) {
+        flow.steps.forEach((step, index) => {
+          activeNodeIds.add(step.from);
+          activeNodeIds.add(step.to);
+          activeEdgeKeys.add(`${step.from}->${step.to}->${index}`);
+        });
+      }
+
+      const allEdges = state.data.flows.flatMap((candidateFlow) =>
+        candidateFlow.steps.map((step, index) => ({ ...step, index, flowId: candidateFlow.id }))
+      );
+
+      els.edgeLayer.innerHTML = allEdges.map((step) => {
+        const from = getComponent(step.from);
+        const to = getComponent(step.to);
+        if (!from || !to) return "";
+        const key = `${step.from}->${step.to}->${step.index}`;
+        const isActive = flow && step.flowId === flow.id;
+        const path = buildPath(from, to);
+        const labelPoint = midpoint(from, to);
+        return `
+          <path class="edge-path ${isActive ? "active" : ""}" d="${path}" ${isActive ? "marker-end=\"url(#arrow)\"" : ""}></path>
+          <text class="edge-label ${isActive ? "active" : ""}" x="${labelPoint.x}" y="${labelPoint.y - 8}" text-anchor="middle">${escapeHtml(step.label || "")}</text>
+        `;
+      }).join("");
+
+      els.nodeLayer.innerHTML = state.data.components.map((component) => {
+        const isActive = activeNodeIds.has(component.id);
+        const isFocus = state.focusedComponentId === component.id;
+        const shouldDim = flow && !isActive && !isFocus;
+        return `
+          <g class="node ${isActive ? "active" : ""} ${isFocus ? "focus" : ""} ${shouldDim ? "dim" : ""}" data-node-id="${escapeHtml(component.id)}" transform="translate(${component.x}, ${component.y})">
+            <rect width="160" height="74" rx="8"></rect>
+            <text class="node-title" x="14" y="27">${escapeHtml(truncate(component.name, 18))}</text>
+            <text class="node-subtitle" x="14" y="50">${escapeHtml(truncate(component.package || component.kind || "", 21))}</text>
+          </g>
+        `;
+      }).join("");
+
+      els.nodeLayer.querySelectorAll("[data-node-id]").forEach((node) => {
+        node.addEventListener("click", () => {
+          state.focusedComponentId = node.dataset.nodeId;
+          render();
+        });
+      });
+    }
+
+    function truncate(value, maxLength) {
+      const text = String(value || "");
+      return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+    }
+
+    function buildPath(from, to) {
+      const movesRight = to.x >= from.x;
+      const start = { x: movesRight ? from.x + 160 : from.x, y: from.y + 37 };
+      const end = { x: movesRight ? to.x : to.x + 160, y: to.y + 37 };
+      const dx = Math.max(80, Math.abs(end.x - start.x) * 0.45);
+      const c1 = { x: start.x + (movesRight ? dx : -dx), y: start.y };
+      const c2 = { x: end.x - (movesRight ? dx : -dx), y: end.y };
+      return `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`;
+    }
+
+    function midpoint(from, to) {
+      return {
+        x: (from.x + to.x + 160) / 2,
+        y: (from.y + to.y + 74) / 2
+      };
+    }
+
+    function renderInspector() {
+      const flow = getSelectedFlow();
+      const focused = getComponent(state.focusedComponentId);
+
+      if (flow) {
+        els.selectedTitle.textContent = flow.name;
+        els.selectedMeta.textContent = `${flow.category || "未分類"} · ${flow.steps.length} 個傳遞步驟`;
+        els.inspectorTitle.textContent = flow.name;
+        els.inspectorSummary.textContent = flow.summary || "此流程尚未填寫摘要。";
+        els.stepList.innerHTML = flow.steps.map((step, index) => {
+          const from = getComponent(step.from);
+          const to = getComponent(step.to);
+          return `
+            <article class="step-card">
+              <strong>${index + 1}. ${escapeHtml(from?.name || step.from)} → ${escapeHtml(to?.name || step.to)}</strong>
+              <span>${escapeHtml(step.label || "資料傳遞")}</span>
+              ${step.payload ? `<code class="payload">${escapeHtml(step.payload)}</code>` : ""}
+              <p>${escapeHtml(step.annotation || "尚未填寫註解。")}</p>
+            </article>
+          `;
+        }).join("");
+      } else {
+        els.selectedTitle.textContent = "尚未選擇流程";
+        els.selectedMeta.textContent = "請從左側選擇一個動作。";
+        els.inspectorTitle.textContent = "流程註解";
+        els.inspectorSummary.textContent = "選擇流程後，這裡會列出每一步的資料傳遞、payload 與說明。";
+        els.stepList.innerHTML = `<p class="empty-state">尚無流程步驟。</p>`;
+      }
+
+      if (focused) {
+        const relatedFlows = state.data.flows
+          .filter((candidate) => candidate.steps.some((step) => step.from === focused.id || step.to === focused.id))
+          .map((candidate) => candidate.name)
+          .join("、");
+        els.componentDetail.innerHTML = `
+          <h3>${escapeHtml(focused.name)}</h3>
+          <p class="summary">${escapeHtml(focused.description || "尚未填寫描述。")}</p>
+          <p><code class="payload">${escapeHtml(focused.package || "未分類")} / ${escapeHtml(focused.kind || "component")}</code></p>
+          <p class="summary">相關流程：${escapeHtml(relatedFlows || "尚無")}</p>
+        `;
+      } else {
+        els.componentDetail.innerHTML = `
+          <h3>組件資訊</h3>
+          <p class="summary">點擊地圖或左側清單中的組件，可查看它的 package、類型與描述。</p>
+        `;
+      }
+    }
+
+    els.searchInput.addEventListener("input", (event) => {
+      state.search = event.target.value.trim().toLowerCase();
+      render();
+    });
+
+    els.fileInput.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        loadData(data, file.name);
+      } catch (error) {
+        setStatus(`匯入失敗：${error.message}`);
+      }
+    });
+
+    loadDefaultData();
+  </script>
+</body>
+</html>

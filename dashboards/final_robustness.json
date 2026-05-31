@@ -1,0 +1,249 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""},
+    {"type": "panel", "id": "barchart", "name": "Bar chart", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "DARAMS P0 final robustness bundle dashboard: incumbent selector, robustness checks, closure decisions, and artifacts.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": ["darams", "experiment"],
+      "targetBlank": false,
+      "title": "其他 DARAMS Dashboard",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT bundle_id, title, is_official, validation_start, validation_end, validation_status, official_selector, official_adaptation, primary_execution, secondary_execution, summary_report FROM final_robustness_bundles WHERE bundle_id = '$bundle_id'",
+          "refId": "A"
+        }
+      ],
+      "title": "Final Robustness Bundle",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 5},
+      "id": 2,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT topic, decision, severity, evidence FROM final_robustness_decisions WHERE bundle_id = '$bundle_id' ORDER BY sort_order, topic",
+          "refId": "A"
+        }
+      ],
+      "title": "正式決策與 Caveats",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 11},
+      "id": 3,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price, series, result_role, is_official_strategy, is_benchmark, cumulative_return_pct, sharpe, max_drawdown_pct, avg_turnover, avg_cost_bps, n_reuses, n_misses FROM final_robustness_strategy_results WHERE bundle_id = '$bundle_id' ORDER BY sort_order, execution_price, series",
+          "refId": "A"
+        }
+      ],
+      "title": "主結果、Benchmark、Alpha Expansion、Model Pool Closure",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 20},
+      "id": 4,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "orientation": "auto",
+        "showValue": "always",
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price || ' / ' || series AS metric, cumulative_return_pct AS value FROM final_robustness_strategy_results WHERE bundle_id = '$bundle_id' AND result_role IN ('incumbent', 'baseline', 'benchmark', 'model_pool_closure') ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Cumulative Return %",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 20},
+      "id": 5,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "orientation": "auto",
+        "showValue": "always",
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price || ' / ' || series AS metric, sharpe AS value FROM final_robustness_strategy_results WHERE bundle_id = '$bundle_id' AND result_role IN ('incumbent', 'baseline', 'benchmark', 'model_pool_closure') ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Sharpe",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 29},
+      "id": 6,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price, metric, real_value, reference_value AS placebo_p95, percentile, n_samples AS seeds, passed FROM final_robustness_checks WHERE bundle_id = '$bundle_id' AND check_type = 'placebo' ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Shuffled-signal Placebo",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 29},
+      "id": 7,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price, comparison, real_value AS mean_excess_bps_day, p_value AS paired_p, reference_value AS block_p, ci05 AS block_ci05_bps, ci95 AS block_ci95_bps, passed FROM final_robustness_checks WHERE bundle_id = '$bundle_id' AND check_type = 'bootstrap' ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Paired / Block Bootstrap",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 36},
+      "id": 8,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price, regime, cumulative_return_pct, sharpe, max_drawdown_pct FROM final_robustness_regime_results WHERE bundle_id = '$bundle_id' ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Regime Breakdown",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 36},
+      "id": 9,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "orientation": "auto",
+        "showValue": "always",
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT execution_price || ' / ' || regime AS metric, cumulative_return_pct AS value FROM final_robustness_regime_results WHERE bundle_id = '$bundle_id' ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Regime Return %",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 7, "w": 24, "x": 0, "y": 44},
+      "id": 10,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT artifact_type, label, path FROM final_robustness_artifacts WHERE bundle_id = '$bundle_id' ORDER BY sort_order",
+          "refId": "A"
+        }
+      ],
+      "title": "Artifact Index",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["darams", "final-robustness", "research"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "postgres", "uid": "darams_pg"},
+        "definition": "SELECT bundle_id AS __value, CASE WHEN is_official THEN '[official] ' ELSE '' END || title || ' (' || bundle_id || ')' AS __text FROM final_robustness_bundles WHERE status = 'completed' ORDER BY CASE WHEN is_official THEN 0 ELSE 1 END, validation_end DESC, ingested_at DESC",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Bundle",
+        "multi": false,
+        "name": "bundle_id",
+        "options": [],
+        "query": "SELECT bundle_id AS __value, CASE WHEN is_official THEN '[official] ' ELSE '' END || title || ' (' || bundle_id || ')' AS __text FROM final_robustness_bundles WHERE status = 'completed' ORDER BY CASE WHEN is_official THEN 0 ELSE 1 END, validation_end DESC, ingested_at DESC",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-3y", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS Final Robustness",
+  "uid": "darams-final-robustness",
+  "version": 1,
+  "weekStart": ""
+}

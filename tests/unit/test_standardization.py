@@ -1,7 +1,6 @@
 """Unit tests for Layer 2: Data Standardization."""
 
 import pandas as pd
-import pytest
 
 from src.standardization.calendar import TradingCalendar
 from src.standardization.quality_check import QualityChecker

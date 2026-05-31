@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
-from psycopg2.extras import execute_batch
+from psycopg2.extras import Json, execute_batch
 
 from src.common.db import get_pg_connection
 from src.common.logging import get_logger
@@ -24,13 +24,17 @@ class AlertManager:
             sql = """
                 INSERT INTO monitoring_metrics
                     (metric_time, monitor_type, metric_name, metric_value,
-                     dimension, window_size)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                     dimension, window_size, run_id, account_id, model_id,
+                     strategy_id, dimension_type, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             records = [
                 (
                     m["metric_time"], m["monitor_type"], m["metric_name"],
                     m["metric_value"], m.get("dimension"), m.get("window_size"),
+                    m.get("run_id"), m.get("account_id"), m.get("model_id"),
+                    m.get("strategy_id"), m.get("dimension_type"),
+                    Json(m.get("metadata") or {}),
                 )
                 for m in metrics
             ]
@@ -53,8 +57,9 @@ class AlertManager:
             sql = """
                 INSERT INTO alerts
                     (alert_time, monitor_type, metric_name, severity,
-                     current_value, threshold, message)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     current_value, threshold, message, run_id, account_id,
+                     model_id, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             records = [
                 (
@@ -63,9 +68,13 @@ class AlertManager:
                     m["metric_name"],
                     m["severity"],
                     m["metric_value"],
-                    0.0,  # threshold stored for reference
+                    m.get("threshold", 0.0),
                     f"{m['metric_name']} = {m['metric_value']:.4f} "
                     f"[{m['severity']}] dim={m.get('dimension', 'global')}",
+                    m.get("run_id"),
+                    m.get("account_id"),
+                    m.get("model_id"),
+                    Json(m.get("metadata") or {}),
                 )
                 for m in alertable
             ]

@@ -32,7 +32,7 @@ Full pipeline：使用預計算的 alpha_features（dfs://darams_alpha），不�
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -45,12 +45,10 @@ from src.config.constants import (
     DATA_SOURCE_DEFAULT_PATHS,
     DEFAULT_DATA_SOURCE,
     MVP_V1_ALPHA_IDS,
-    LABEL_HORIZONS,
     MetaSignalMethod,
 )
 from src.config.alpha_selection import load_effective_alpha_ids
 from src.config.data_sources import assert_yfinance_allowed
-from src.execution.order_manager import OrderManager
 from src.execution.paper_engine import PaperTradingEngine
 from src.labeling.evaluator import Evaluator
 from src.labeling.label_generator import LabelGenerator
@@ -504,7 +502,6 @@ def run_backtest(
     portfolio = PortfolioConstructor(method="equal_weight_topk", top_k=10, long_only=True)
     risk_mgr = RiskManager(max_position_weight=0.10, max_gross_exposure=1.0)
     engine = PaperTradingEngine(initial_capital=10_000_000.0, slippage_bps=5.0)
-    order_mgr = OrderManager()
 
     all_orders = []
     all_fills = []

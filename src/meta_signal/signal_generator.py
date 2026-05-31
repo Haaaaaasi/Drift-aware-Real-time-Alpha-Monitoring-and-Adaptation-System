@@ -5,7 +5,6 @@ Routes to the appropriate signal method (rule-based, ML, regime-ensemble).
 
 from __future__ import annotations
 
-from datetime import datetime
 
 import pandas as pd
 

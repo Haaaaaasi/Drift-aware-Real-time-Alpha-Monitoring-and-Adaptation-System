@@ -13,7 +13,6 @@ import math
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from pipelines.simulate_recent import _compute_rolling_ic, _compute_rolling_sharpe
 

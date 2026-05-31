@@ -35,7 +35,6 @@ from src.common.metrics import information_coefficient
 from src.config.alpha_selection import load_effective_alpha_ids
 from src.config.constants import DATA_SOURCE_DEFAULT_PATHS, DEFAULT_DATA_SOURCE
 from src.meta_signal.ml_meta_model import MLMetaModel
-from src.meta_signal.rule_based import RuleBasedSignalGenerator
 
 setup_logging()
 logger = get_logger("adaptation_pipeline")
@@ -56,7 +55,6 @@ def run_adaptation_offline(
     from pipelines.daily_batch_pipeline import compute_python_alphas, load_csv_data
     from src.labeling.label_generator import LabelGenerator
     from src.monitoring.alpha_monitor import AlphaMonitor
-    from src.monitoring.strategy_monitor import StrategyMonitor
 
     # Load effective alphas from WP2 if available
     effective_alphas = load_effective_alpha_ids(required=True)
@@ -266,7 +264,8 @@ def run_adaptation_online() -> dict:
 
     # Policy 2: Performance-triggered（DB-driven 路徑，DB 不可用時自動 fallback）
     adapter = PerformanceTriggeredAdapter()
-    triggered, reason = adapter.check_trigger_from_db()
+    decision = adapter.check_trigger_from_db(create_event=True)
+    triggered, reason = decision.should_trigger, decision.reason
 
     # critical_count 僅用於 summary 記錄，獨立查詢，失敗 fallback -1
     try:
@@ -285,6 +284,9 @@ def run_adaptation_online() -> dict:
         "trigger_reason": reason,
         "critical_alerts": critical_count,
         "production_model": prod_model.get("model_id") if prod_model else None,
+        "adaptation_event_id": decision.event_id,
+        "trigger_type": decision.trigger_type,
+        "trigger_status": decision.status,
     }
     logger.info("adaptation_pipeline_complete", **summary)
     return summary

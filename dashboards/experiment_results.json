@@ -1,0 +1,205 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.2.0"},
+    {"type": "datasource", "id": "postgres", "name": "PostgreSQL", "version": "1.0.0"},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "barchart", "name": "Bar chart", "version": ""}
+  ],
+  "annotations": {"list": []},
+  "description": "DARAMS experiment reporting dashboard for A/B, selector matrix, cost, and model_pool decisions.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT run_id, run_name, run_type, is_official, status, data_source, start_date, end_date, report_path, source_report_dir, completed_at, ingested_at FROM experiment_runs WHERE run_id = '$run_id'",
+          "refId": "A"
+        }
+      ],
+      "title": "Run Summary",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 5},
+      "id": 2,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT strategy, NULLIF(variant_name, '') AS variant, scenario_name, is_benchmark, rank_by_net_return, cumulative_return_pct, annualized_return_pct, sharpe, max_drawdown_pct, win_rate_pct, avg_turnover, avg_gross_return_bps, avg_total_cost_bps, avg_net_return_bps, n_retrains, n_pool_reuses, n_pool_misses FROM experiment_strategy_results WHERE run_id = '$run_id' ORDER BY is_benchmark, COALESCE(rank_by_net_return, 999), strategy, variant_name, scenario_name",
+          "refId": "A"
+        }
+      ],
+      "title": "Strategy Comparison",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "lineInterpolation": "linear", "lineWidth": 1, "showPoints": "never"}, "unit": "currencyTWD"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 14},
+      "id": 3,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "time_series",
+          "rawSql": "SELECT trade_date AS time, strategy || CASE WHEN variant_name <> '' THEN '/' || variant_name ELSE '' END || CASE WHEN scenario_name <> 'baseline' THEN '/' || scenario_name ELSE '' END || CASE WHEN is_benchmark THEN ' (benchmark)' ELSE '' END AS metric, cumulative_value AS value FROM experiment_daily_pnl WHERE run_id = '$run_id' ORDER BY time, metric",
+          "refId": "A"
+        }
+      ],
+      "title": "Cumulative Value",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "lineWidth": 1, "showPoints": "never"}, "unit": "bps"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 14},
+      "id": 4,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "time_series",
+          "rawSql": "SELECT trade_date AS time, strategy || CASE WHEN variant_name <> '' THEN '/' || variant_name ELSE '' END || ' gross' AS metric, gross_return * 10000.0 AS value FROM experiment_daily_pnl WHERE run_id = '$run_id' UNION ALL SELECT trade_date AS time, strategy || CASE WHEN variant_name <> '' THEN '/' || variant_name ELSE '' END || ' cost' AS metric, -1.0 * (COALESCE(commission_cost, 0) + COALESCE(tax_cost, 0) + COALESCE(slippage_cost, 0)) * 10000.0 AS value FROM experiment_daily_pnl WHERE run_id = '$run_id' UNION ALL SELECT trade_date AS time, strategy || CASE WHEN variant_name <> '' THEN '/' || variant_name ELSE '' END || ' net' AS metric, net_return * 10000.0 AS value FROM experiment_daily_pnl WHERE run_id = '$run_id' ORDER BY time, metric",
+          "refId": "A"
+        }
+      ],
+      "title": "Gross / Cost / Net (bps)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "lineWidth": 1, "showPoints": "never"}, "unit": "percentunit"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+      "id": 5,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "time_series",
+          "rawSql": "SELECT trade_date AS time, strategy || CASE WHEN variant_name <> '' THEN '/' || variant_name ELSE '' END || CASE WHEN scenario_name <> 'baseline' THEN '/' || scenario_name ELSE '' END AS metric, turnover AS value FROM experiment_daily_pnl WHERE run_id = '$run_id' AND is_benchmark = false ORDER BY time, metric",
+          "refId": "A"
+        }
+      ],
+      "title": "Turnover",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+      "id": 6,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT COALESCE(selected_role, 'unknown') AS selected_role, COUNT(*) AS selected_count FROM experiment_model_pool_decisions WHERE run_id = '$run_id' AND selected IS TRUE GROUP BY 1 ORDER BY selected_count DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Model Pool Selected Role Distribution",
+      "type": "barchart"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 31},
+      "id": 7,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT date, NULLIF(variant_name, '') AS variant, candidate_role, selected_role, selected, decision_reason, candidate_similarity, selected_similarity, best_seen_similarity, selection_metric, selection_score, shadow_topk_net_return, proxy_net_return, proxy_cost, proxy_rank_by_net FROM experiment_model_pool_decisions WHERE run_id = '$run_id' ORDER BY date, variant_name, selected DESC, candidate_role",
+          "refId": "A"
+        }
+      ],
+      "title": "Model Pool Decision Detail",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "id": 8,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT variant_name, selection_metric, similarity_threshold, cumulative_return_pct, sharpe, max_drawdown_pct, avg_net_return_bps, avg_total_cost_bps, n_retrains, n_pool_reuses, n_pool_misses, selected_current, selected_new, selected_reused, selected_proxy_rank_mean FROM experiment_strategy_results WHERE run_id = '$run_id' AND is_matrix_cell = true ORDER BY cumulative_return_pct DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Selector Matrix Summary",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "darams_pg"},
+      "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "id": 9,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "darams_pg"},
+          "format": "table",
+          "rawSql": "SELECT scenario_name, round_trip_cost_pct, strategy, rank_by_net_return, cumulative_return_pct, sharpe, max_drawdown_pct, avg_turnover, avg_total_cost_bps, avg_net_return_bps FROM experiment_strategy_results WHERE run_id = '$run_id' AND scenario_name <> 'baseline' ORDER BY round_trip_cost_pct, rank_by_net_return, strategy",
+          "refId": "A"
+        }
+      ],
+      "title": "Cost Sensitivity",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["darams", "experiment"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {"type": "postgres", "uid": "darams_pg"},
+        "definition": "SELECT run_id AS __value, CASE WHEN is_official THEN '[official] ' ELSE '' END || run_name || ' (' || run_id || ')' AS __text FROM experiment_runs WHERE status = 'completed' ORDER BY CASE WHEN is_official THEN 0 ELSE 1 END, COALESCE(completed_at, ingested_at) DESC",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Run",
+        "multi": false,
+        "name": "run_id",
+        "options": [],
+        "query": "SELECT run_id AS __value, CASE WHEN is_official THEN '[official] ' ELSE '' END || run_name || ' (' || run_id || ')' AS __text FROM experiment_runs WHERE status = 'completed' ORDER BY CASE WHEN is_official THEN 0 ELSE 1 END, COALESCE(completed_at, ingested_at) DESC",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-3y", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "DARAMS Experiment Results",
+  "uid": "darams-experiment-results",
+  "version": 1,
+  "weekStart": ""
+}

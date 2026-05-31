@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DARAMS Live Console</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --surface-soft: #eef2f6;
+      --line: #d8dee6;
+      --text: #20242a;
+      --muted: #6c7683;
+      --blue: #2563eb;
+      --green: #0f8a5f;
+      --red: #b42318;
+      --amber: #b7791f;
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 220px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .toggle input {
+      width: 16px;
+      height: 16px;
+    }
+
+    .button {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: var(--radius);
+      min-height: 36px;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    .button.primary {
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+    }
+
+    .button.danger {
+      color: var(--red);
+      border-color: #f1b7ae;
+      background: #fff8f7;
+    }
+
+    .button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    main {
+      padding: 18px 20px 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(130px, 1fr));
+      gap: 10px;
+    }
+
+    .metric, .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .metric {
+      padding: 12px 14px;
+      min-height: 74px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric .value {
+      font-size: 17px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .metric .sub {
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-word;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      min-height: 24px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      width: fit-content;
+    }
+
+    .badge.green {
+      color: var(--green);
+      background: #e7f6ef;
+      border-color: #b9e6d0;
+    }
+
+    .badge.red {
+      color: var(--red);
+      background: #fdecea;
+      border-color: #f7c5be;
+    }
+
+    .badge.amber {
+      color: var(--amber);
+      background: #fff6db;
+      border-color: #f1d99b;
+    }
+
+    .badge.gray {
+      color: #4b5563;
+      background: #eef0f3;
+      border-color: #d6dbe1;
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .panel {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      min-height: 48px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .panel-meta {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .summary-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .ops {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .notice {
+      border: 1px solid #b9e6d0;
+      background: #e7f6ef;
+      color: var(--green);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: none;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      background: #fafbfc;
+      font-size: 12px;
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    td.numeric, th.numeric {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    .tabs {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface-soft);
+    }
+
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      min-height: 32px;
+      padding: 0 11px;
+      cursor: pointer;
+    }
+
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .empty {
+      padding: 28px 14px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .error {
+      border: 1px solid #f7c5be;
+      background: #fdecea;
+      color: var(--red);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: none;
+    }
+
+    @media (max-width: 1180px) {
+      .status-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .topbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .toolbar {
+        justify-content: flex-start;
+      }
+
+      main {
+        padding: 12px;
+      }
+
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .panel-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>DARAMS Live Console</h1>
+        <span id="lastUpdated">尚未更新</span>
+      </div>
+      <div class="toolbar">
+        <label class="toggle">
+          <input id="officialOnly" type="checkbox" checked>
+          Official only
+        </label>
+        <button id="grafanaBtn" class="button" type="button">Grafana</button>
+        <button id="refreshBtn" class="button primary" type="button">更新</button>
+      </div>
+    </header>
+
+    <main>
+      <div id="errorBox" class="error"></div>
+      <div id="noticeBox" class="notice"></div>
+
+      <section class="status-grid">
+        <div class="metric">
+          <div class="label">Run</div>
+          <div id="runId" class="value">-</div>
+          <div id="runMeta" class="sub">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Data As-of</div>
+          <div id="asOfDate" class="value">-</div>
+          <div id="freshness" class="sub">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Model</div>
+          <div id="modelId" class="value">-</div>
+          <div id="featureCount" class="sub">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Retrain</div>
+          <div id="retrainAction" class="value">-</div>
+          <div id="mode" class="sub">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Recommendations</div>
+          <div id="recommendationCount" class="value">-</div>
+          <div id="recommendationDelta" class="sub">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Live Cum Return</div>
+          <div id="cumReturn" class="value">-</div>
+          <div id="cumReturnMeta" class="sub">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Status</div>
+          <div id="statusBadge" class="value">-</div>
+          <div id="officialBadge" class="sub">-</div>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">下一交易日買賣建議</h2>
+              <div id="recommendationSummary" class="summary-row"></div>
+            </div>
+            <div class="ops">
+              <button id="approvePendingBtn" class="button" type="button">核准全部 Pending</button>
+              <button id="cancelPendingBtn" class="button danger" type="button">取消全部 Pending</button>
+              <button id="exportApprovedBtn" class="button primary" type="button">匯出 Approved</button>
+            </div>
+          </div>
+          <div id="recommendationsTable" class="table-wrap"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">當前目標持倉</h2>
+            <div id="holdingsMeta" class="panel-meta">-</div>
+          </div>
+          <div id="holdingsTable" class="table-wrap"></div>
+        </article>
+
+        <article class="panel wide">
+          <div class="panel-header">
+            <h2 class="panel-title">Alpha 配置</h2>
+            <div class="tabs" role="tablist">
+              <button id="productionTab" class="tab active" type="button">Production</button>
+              <button id="diagnosticTab" class="tab" type="button">Diagnostic</button>
+            </div>
+          </div>
+          <div id="alphaTable" class="table-wrap"></div>
+        </article>
+
+        <article class="panel wide">
+          <div class="panel-header">
+            <h2 class="panel-title">Live Run History</h2>
+            <div id="runsMeta" class="panel-meta">-</div>
+          </div>
+          <div id="runsTable" class="table-wrap"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      payload: null,
+      alphaRole: "production"
+    };
+
+    const el = (id) => document.getElementById(id);
+
+    function formatDate(value) {
+      if (!value) return "-";
+      return String(value).slice(0, 10);
+    }
+
+    function formatTime(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString("zh-TW", { hour12: false });
+    }
+
+    function formatPct(value, digits = 2) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+      return `${(Number(value) * 100).toFixed(digits)}%`;
+    }
+
+    function formatNum(value, digits = 3) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+      return Number(value).toFixed(digits);
+    }
+
+    function formatInt(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+      return Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 0 });
+    }
+
+    function badge(text, tone = "gray") {
+      return `<span class="badge ${tone}">${escapeHtml(text || "-")}</span>`;
+    }
+
+    function actionTone(action) {
+      if (action === "BUY" || action === "INCREASE") return "green";
+      if (action === "SELL" || action === "REDUCE") return "red";
+      return "gray";
+    }
+
+    function freshnessTone(status) {
+      if (status === "FRESH") return "green";
+      if (status === "STALE") return "amber";
+      if (status === "BACKDATED") return "red";
+      return "gray";
+    }
+
+    function statusTone(status) {
+      if (status === "APPROVED" || status === "EXPORTED" || status === "EXECUTED") return "green";
+      if (status === "CANCELED") return "red";
+      if (status === "PENDING") return "amber";
+      return "gray";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function renderTable(targetId, rows, columns, emptyText) {
+      if (!rows || rows.length === 0) {
+        el(targetId).innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
+        return;
+      }
+      const thead = columns.map((col) => {
+        const cls = col.numeric ? " class=\"numeric\"" : "";
+        return `<th${cls}>${escapeHtml(col.label)}</th>`;
+      }).join("");
+      const tbody = rows.map((row) => {
+        const cells = columns.map((col) => {
+          const cls = col.numeric ? " class=\"numeric\"" : "";
+          const value = col.render ? col.render(row) : escapeHtml(row[col.key] ?? "-");
+          return `<td${cls}>${value}</td>`;
+        }).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      el(targetId).innerHTML = `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+    }
+
+    function render(payload) {
+      state.payload = payload;
+      const run = payload.run;
+      if (!run) {
+        renderEmptyState(payload);
+        return;
+      }
+
+      el("runId").textContent = String(run.run_id || "-").slice(0, 8);
+      el("runMeta").textContent = `${run.run_purpose || "-"} / ${run.data_source || "-"}`;
+      el("asOfDate").textContent = formatDate(run.as_of_date);
+      const liveFreshness = run.live_data_freshness_status || run.data_freshness_status;
+      const liveLagDays = run.live_data_lag_days ?? run.data_lag_days ?? "-";
+      el("freshness").innerHTML = [
+        `${badge(liveFreshness, freshnessTone(liveFreshness))} lag ${liveLagDays}d`,
+        `data max ${formatDate(run.data_max_date)}`,
+        `run finished ${formatTime(run.run_finished_at)}`
+      ].join("<br>");
+      el("modelId").textContent = run.production_model_id || "-";
+      el("featureCount").textContent = `${run.n_feature_alphas ?? "-"} features`;
+      el("retrainAction").textContent = run.retrain_action || "-";
+      el("mode").textContent = run.mode || "-";
+      el("statusBadge").innerHTML = badge(run.status, run.status === "COMPLETED" ? "green" : "amber");
+      el("officialBadge").innerHTML = run.is_official ? badge("official", "green") : badge("non-official", "gray");
+
+      const summary = payload.recommendation_summary || [];
+      const totalRecs = summary.reduce((acc, row) => acc + Number(row.n || 0), 0);
+      const grossDelta = summary.reduce((acc, row) => acc + Number(row.gross_delta_weight || 0), 0);
+      const recs = payload.recommendations || [];
+      const performance = payload.performance || {};
+      const pendingCount = recs.filter((row) => row.status === "PENDING").length;
+      const approvedCount = recs.filter((row) => row.status === "APPROVED").length;
+      el("recommendationCount").textContent = formatInt(totalRecs);
+      el("recommendationDelta").textContent = `gross delta ${formatPct(grossDelta)}`;
+      if (performance.status === "AVAILABLE") {
+        el("cumReturn").textContent = formatPct(performance.cumulative_return);
+        el("cumReturnMeta").textContent = `PnL ${formatInt(performance.unrealized_pnl)} / capital ${formatInt(performance.capital)}`;
+      } else if (performance.status === "ESTIMATED") {
+        el("cumReturn").textContent = formatPct(performance.cumulative_return);
+        el("cumReturnMeta").textContent = performance.message || "Target M2M estimate, not execution PnL";
+      } else {
+        el("cumReturn").textContent = "N/A";
+        el("cumReturnMeta").textContent = performance.message || "等待 execution / PnL";
+      }
+      el("recommendationSummary").innerHTML = summary.length
+        ? summary.map((row) => badge(`${row.action} ${row.n}`, actionTone(row.action))).join("")
+        : badge("NONE", "gray");
+      el("approvePendingBtn").disabled = pendingCount === 0;
+      el("cancelPendingBtn").disabled = pendingCount === 0;
+      el("exportApprovedBtn").disabled = approvedCount === 0;
+
+      const holdings = payload.holdings || [];
+      const exposure = holdings.reduce((acc, row) => acc + Number(row.target_weight || 0), 0);
+      el("holdingsMeta").textContent = `${holdings.length} names / exposure ${formatPct(exposure)}`;
+      el("runsMeta").textContent = `${(payload.runs || []).length} runs`;
+
+      renderRecommendations(payload.recommendations || []);
+      renderHoldings(holdings);
+      renderAlpha();
+      renderRuns(payload.runs || []);
+    }
+
+    function renderEmptyState(payload) {
+      ["runId", "asOfDate", "modelId", "retrainAction", "recommendationCount", "cumReturn"].forEach((id) => {
+        el(id).textContent = "-";
+      });
+      ["runMeta", "freshness", "featureCount", "mode", "recommendationDelta", "cumReturnMeta", "officialBadge"].forEach((id) => {
+        el(id).textContent = "-";
+      });
+      el("statusBadge").innerHTML = badge("NO RUN", "gray");
+      el("recommendationSummary").innerHTML = "";
+      renderTable("recommendationsTable", [], [], "尚無買賣建議");
+      renderTable("holdingsTable", [], [], "尚無持倉");
+      renderTable("alphaTable", [], [], "尚無 alpha snapshot");
+      renderRuns(payload.runs || []);
+    }
+
+    function renderRecommendations(rows) {
+      renderTable("recommendationsTable", rows, [
+        { label: "Action", key: "action", render: (r) => badge(r.action, actionTone(r.action)) },
+        { label: "Ticker", key: "security_id" },
+        { label: "名稱", key: "security_name", render: (r) => escapeHtml(r.security_name || "-") },
+        { label: "Current", key: "current_weight", numeric: true, render: (r) => formatPct(r.current_weight) },
+        { label: "Target", key: "target_weight", numeric: true, render: (r) => formatPct(r.target_weight) },
+        { label: "Delta", key: "delta_weight", numeric: true, render: (r) => formatPct(r.delta_weight) },
+        { label: "股數", key: "share_quantity", numeric: true, render: (r) => formatInt(r.share_quantity) },
+        { label: "Shioaji", key: "shioaji_order_plan", render: (r) => escapeHtml(r.shioaji_order_plan || "-") },
+        { label: "Price", key: "last_price", numeric: true, render: (r) => formatNum(r.last_price, 2) },
+        { label: "Score", key: "signal_score", numeric: true, render: (r) => formatNum(r.signal_score, 4) },
+        { label: "Rank", key: "rank", numeric: true, render: (r) => formatInt(r.rank) },
+        { label: "Reason", key: "reason" },
+        { label: "Status", key: "status", render: (r) => badge(r.status, statusTone(r.status)) }
+      ], "尚無買賣建議");
+    }
+
+    function renderHoldings(rows) {
+      renderTable("holdingsTable", rows, [
+        { label: "Ticker", key: "security_id" },
+        { label: "名稱", key: "security_name", render: (r) => escapeHtml(r.security_name || "-") },
+        { label: "Weight", key: "target_weight", numeric: true, render: (r) => formatPct(r.target_weight) },
+        { label: "Shares", key: "target_shares", numeric: true, render: (r) => formatInt(r.target_shares) },
+        { label: "Price", key: "last_price", numeric: true, render: (r) => formatNum(r.last_price, 2) },
+        { label: "Mkt Value", key: "market_value", numeric: true, render: (r) => formatInt(r.market_value) },
+        { label: "Unrealized PnL", key: "unrealized_pnl", numeric: true, render: (r) => formatInt(r.unrealized_pnl) },
+        { label: "Score", key: "signal_score", numeric: true, render: (r) => formatNum(r.signal_score, 4) },
+        { label: "Rank", key: "rank", numeric: true, render: (r) => formatInt(r.rank) },
+        { label: "Days", key: "holding_days", numeric: true, render: (r) => formatInt(r.holding_days) },
+        { label: "Reason", key: "reason" }
+      ], "尚無持倉");
+    }
+
+    function renderAlpha() {
+      const rows = state.alphaRole === "production"
+        ? (state.payload?.production_alphas || [])
+        : (state.payload?.diagnostic_alphas || []);
+      renderTable("alphaTable", rows, [
+        { label: "Alpha", key: "alpha_id" },
+        { label: "Selected", key: "selected", render: (r) => r.selected ? badge("selected", "green") : badge("candidate", "gray") },
+        { label: "Weight", key: "weight", numeric: true, render: (r) => formatPct(r.weight, 3) },
+        { label: "Score", key: "score", numeric: true, render: (r) => formatNum(r.score, 5) },
+        { label: "Rank IC", key: "rolling_rank_ic", numeric: true, render: (r) => formatNum(r.rolling_rank_ic, 5) },
+        { label: "Coverage", key: "coverage", numeric: true, render: (r) => formatPct(r.coverage, 1) },
+        { label: "Stability", key: "stability", numeric: true, render: (r) => formatNum(r.stability, 5) },
+        { label: "Excluded", key: "excluded_reason" }
+      ], "尚無 alpha snapshot");
+    }
+
+    function renderRuns(rows) {
+      renderTable("runsTable", rows, [
+        { label: "As-of", key: "as_of_date", render: (r) => formatDate(r.as_of_date) },
+        { label: "Run", key: "run_id", render: (r) => escapeHtml(String(r.run_id || "-").slice(0, 8)) },
+        { label: "Official", key: "is_official", render: (r) => r.is_official ? badge("yes", "green") : badge("no", "gray") },
+        { label: "Freshness", key: "data_freshness_status", render: (r) => badge(r.data_freshness_status, freshnessTone(r.data_freshness_status)) },
+        { label: "Lag", key: "data_lag_days", numeric: true, render: (r) => `${formatInt(r.data_lag_days)}d` },
+        { label: "Model", key: "production_model_id" },
+        { label: "Features", key: "n_feature_alphas", numeric: true, render: (r) => formatInt(r.n_feature_alphas) },
+        { label: "Retrain", key: "retrain_action" },
+        { label: "Finished", key: "run_finished_at", render: (r) => formatTime(r.run_finished_at) }
+      ], "尚無 live run");
+    }
+
+    async function loadConsole() {
+      const refreshBtn = el("refreshBtn");
+      const errorBox = el("errorBox");
+      refreshBtn.disabled = true;
+      errorBox.style.display = "none";
+      try {
+        const officialOnly = el("officialOnly").checked;
+        const response = await fetch(`/api/v1/live/console?official_only=${officialOnly}&limit=20`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        render(payload);
+        const browserTime = new Date().toLocaleString("zh-TW", { hour12: false });
+        const serverTime = payload.server_time ? formatTime(payload.server_time) : "-";
+        el("lastUpdated").textContent = `頁面刷新 ${browserTime} / API ${serverTime}`;
+      } catch (error) {
+        errorBox.textContent = `載入失敗: ${error.message}`;
+        errorBox.style.display = "block";
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    function setActionButtonsBusy(busy) {
+      ["approvePendingBtn", "cancelPendingBtn", "exportApprovedBtn", "refreshBtn"].forEach((id) => {
+        el(id).disabled = busy;
+      });
+    }
+
+    function showNotice(message) {
+      const box = el("noticeBox");
+      box.textContent = message;
+      box.style.display = "block";
+      setTimeout(() => {
+        box.style.display = "none";
+      }, 5000);
+    }
+
+    function showError(message) {
+      const box = el("errorBox");
+      box.textContent = message;
+      box.style.display = "block";
+    }
+
+    async function postJson(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || `HTTP ${response.status}`);
+      }
+      return data;
+    }
+
+    async function updatePending(status) {
+      const verb = status === "APPROVED" ? "核准" : "取消";
+      if (!window.confirm(`${verb}目前 latest run 的所有 PENDING 買賣建議？`)) {
+        return;
+      }
+      setActionButtonsBusy(true);
+      el("errorBox").style.display = "none";
+      try {
+        const officialOnly = el("officialOnly").checked;
+        const data = await postJson("/api/v1/live/recommendations/status", {
+          status,
+          from_status: "PENDING",
+          official_only: officialOnly
+        });
+        showNotice(`${status} ${data.updated_count} 筆建議`);
+        await loadConsole();
+      } catch (error) {
+        showError(`更新失敗: ${error.message}`);
+        setActionButtonsBusy(false);
+      }
+    }
+
+    async function exportApproved() {
+      setActionButtonsBusy(true);
+      el("errorBox").style.display = "none";
+      try {
+        const officialOnly = el("officialOnly").checked;
+        const data = await postJson("/api/v1/live/recommendations/export", {
+          statuses: ["APPROVED"],
+          mark_exported: true,
+          official_only: officialOnly
+        });
+        showNotice(`已匯出 ${data.rows} 筆，並標記 ${data.marked_exported} 筆為 EXPORTED`);
+        if (data.download_url) {
+          window.open(data.download_url, "_blank", "noopener");
+        }
+        await loadConsole();
+      } catch (error) {
+        showError(`匯出失敗: ${error.message}`);
+        setActionButtonsBusy(false);
+      }
+    }
+
+    el("refreshBtn").addEventListener("click", loadConsole);
+    el("officialOnly").addEventListener("change", loadConsole);
+    el("grafanaBtn").addEventListener("click", () => {
+      window.location.href = "http://127.0.0.1:3000/d/darams-live-ops/darams-live-ops?orgId=1&refresh=30s";
+    });
+    el("approvePendingBtn").addEventListener("click", () => updatePending("APPROVED"));
+    el("cancelPendingBtn").addEventListener("click", () => updatePending("CANCELED"));
+    el("exportApprovedBtn").addEventListener("click", exportApproved);
+    el("productionTab").addEventListener("click", () => {
+      state.alphaRole = "production";
+      el("productionTab").classList.add("active");
+      el("diagnosticTab").classList.remove("active");
+      renderAlpha();
+    });
+    el("diagnosticTab").addEventListener("click", () => {
+      state.alphaRole = "diagnostic";
+      el("diagnosticTab").classList.add("active");
+      el("productionTab").classList.remove("active");
+      renderAlpha();
+    });
+
+    loadConsole();
+    setInterval(loadConsole, 30000);
+  </script>
+</body>
+</html>

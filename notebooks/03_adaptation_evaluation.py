@@ -87,6 +87,20 @@ def load_ab_run(run_dir: Path) -> dict:
         pnl = pd.read_csv(sim_dir / "daily_pnl.csv", parse_dates=["date"])
         retrains = pd.read_csv(sim_dir / "retrain_log.csv", parse_dates=["date"])
         data[strat] = {"pnl": pnl, "retrains": retrains, "sim_dir": sim_dir}
+
+    benchmark_path = cfg.get("benchmark_path")
+    if benchmark_path:
+        bm_path = Path(benchmark_path)
+        if bm_path.exists():
+            pnl = pd.read_csv(bm_path, parse_dates=["date"])
+            retrains = pd.DataFrame({"date": pd.to_datetime([])})
+            data["ew_buy_hold_universe"] = {
+                "pnl": pnl,
+                "retrains": retrains,
+                "sim_dir": bm_path.parent,
+                "is_benchmark": True,
+            }
+
     comparison = pd.read_csv(run_dir / "comparison.csv", index_col=0)
     return {"config": cfg, "data": data, "comparison": comparison, "run_dir": run_dir}
 

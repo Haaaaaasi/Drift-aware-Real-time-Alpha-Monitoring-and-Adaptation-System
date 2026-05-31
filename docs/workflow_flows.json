@@ -1,0 +1,310 @@
+{
+  "meta": {
+    "title": "套件與組件工作流地圖",
+    "description": "這份 JSON 是互動式工作流頁面的單一資料來源。新增 component、package 或 flow 後，重新整理 HTML 即可更新畫面。",
+    "version": "0.1.0",
+    "updated_at": "2026-05-13"
+  },
+  "components": [
+    {
+      "id": "admin_console",
+      "name": "管理後台",
+      "package": "前端與桌面層",
+      "kind": "component",
+      "description": "提供管理員觸發邀請、查看流程狀態與下載報表的操作介面。",
+      "x": 90,
+      "y": 120
+    },
+    {
+      "id": "todesktop_cli",
+      "name": "todesktop CLI",
+      "package": "前端與桌面層",
+      "kind": "package",
+      "description": "接收桌面打包命令，讀取 build 設定並提交建置工作。",
+      "x": 90,
+      "y": 320
+    },
+    {
+      "id": "auth_service",
+      "name": "Auth Service",
+      "package": "身份與權限",
+      "kind": "component",
+      "description": "驗證操作者身分、租戶範圍與角色權限。",
+      "x": 300,
+      "y": 80
+    },
+    {
+      "id": "invitation_service",
+      "name": "Invitation Service",
+      "package": "身份與權限",
+      "kind": "component",
+      "description": "建立邀請 token、保存邀請狀態並處理接受邀請後的帳號初始化。",
+      "x": 510,
+      "y": 80
+    },
+    {
+      "id": "email_provider",
+      "name": "Email Provider",
+      "package": "外部服務",
+      "kind": "external",
+      "description": "寄送邀請信、通知信與建置完成通知。",
+      "x": 730,
+      "y": 80
+    },
+    {
+      "id": "data_ingestion",
+      "name": "Data Ingestion",
+      "package": "DARAMS Pipeline",
+      "kind": "component",
+      "description": "載入 TEJ / CSV / synthetic bars，輸出標準化前的市場資料。",
+      "x": 90,
+      "y": 520
+    },
+    {
+      "id": "alpha_engine",
+      "name": "Alpha Engine",
+      "package": "DARAMS Pipeline",
+      "kind": "component",
+      "description": "透過 Python WQ101 與 alpha cache 產生 long-format alpha features。",
+      "x": 300,
+      "y": 520
+    },
+    {
+      "id": "meta_signal",
+      "name": "Meta Signal",
+      "package": "DARAMS Pipeline",
+      "kind": "component",
+      "description": "聚合 alpha features，輸出每檔股票的模型分數或交易訊號。",
+      "x": 510,
+      "y": 520
+    },
+    {
+      "id": "portfolio_engine",
+      "name": "Portfolio Engine",
+      "package": "DARAMS Pipeline",
+      "kind": "component",
+      "description": "把 signal 轉為目標權重，並套用低換手與持倉紀律。",
+      "x": 730,
+      "y": 520
+    },
+    {
+      "id": "monitoring",
+      "name": "Monitoring",
+      "package": "DARAMS Monitoring",
+      "kind": "component",
+      "description": "計算 data / alpha / model / strategy 四層監控指標與警示。",
+      "x": 730,
+      "y": 340
+    },
+    {
+      "id": "adaptation",
+      "name": "Adaptation",
+      "package": "DARAMS Adaptation",
+      "kind": "component",
+      "description": "依排程或監控結果執行 retrain、shadow evaluation 與 model pool 策略。",
+      "x": 510,
+      "y": 340
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "package": "資料與狀態",
+      "kind": "database",
+      "description": "保存 users、invites、monitoring_metrics、model_registry 與 experiment results。",
+      "x": 300,
+      "y": 240
+    },
+    {
+      "id": "redis",
+      "name": "Redis",
+      "package": "資料與狀態",
+      "kind": "database",
+      "description": "保存短期快取、最新 signal、alert state 與非同步工作狀態。",
+      "x": 510,
+      "y": 240
+    },
+    {
+      "id": "artifact_store",
+      "name": "Artifact Store",
+      "package": "資料與狀態",
+      "kind": "storage",
+      "description": "保存 build artifact、報表、模型檔與可重現實驗輸出。",
+      "x": 730,
+      "y": 240
+    }
+  ],
+  "flows": [
+    {
+      "id": "invite_user",
+      "name": "邀請新用戶",
+      "category": "身份與協作",
+      "summary": "管理員在後台輸入 email 與角色後，系統驗證權限、建立邀請 token、保存狀態並寄出邀請信。",
+      "steps": [
+        {
+          "from": "admin_console",
+          "to": "auth_service",
+          "label": "檢查操作者權限",
+          "payload": "admin_user_id, tenant_id, desired_role",
+          "annotation": "前端送出邀請前先要求 Auth Service 確認操作者是否能在該 tenant 內授權指定角色。"
+        },
+        {
+          "from": "auth_service",
+          "to": "invitation_service",
+          "label": "核准建立邀請",
+          "payload": "tenant_id, role, inviter_id, expires_at",
+          "annotation": "Auth Service 回傳授權結果後，Invitation Service 產生一次性 token 與到期時間。"
+        },
+        {
+          "from": "invitation_service",
+          "to": "postgres",
+          "label": "寫入 invites",
+          "payload": "invite_id, email, role, token_hash, status",
+          "annotation": "只保存 token hash，不保存明文 token；後續接受邀請時以 hash 比對。"
+        },
+        {
+          "from": "invitation_service",
+          "to": "email_provider",
+          "label": "寄送邀請信",
+          "payload": "email, invite_url, expires_at",
+          "annotation": "Email Provider 只取得寄信必要內容，不接觸完整權限模型。"
+        },
+        {
+          "from": "invitation_service",
+          "to": "redis",
+          "label": "快取邀請狀態",
+          "payload": "invite_id, status=pending",
+          "annotation": "後台可即時顯示 pending / sent / failed，不必每次輪詢 PostgreSQL。"
+        }
+      ]
+    },
+    {
+      "id": "todesktop_build",
+      "name": "todesktop build",
+      "category": "桌面發佈",
+      "summary": "CLI 讀取桌面打包設定，提交 build job，產生 artifact 並把結果通知管理後台。",
+      "steps": [
+        {
+          "from": "todesktop_cli",
+          "to": "auth_service",
+          "label": "驗證發佈 token",
+          "payload": "api_key, project_id",
+          "annotation": "CLI 在提交 build 前驗證發佈 token，避免未授權環境產生正式桌面安裝檔。"
+        },
+        {
+          "from": "todesktop_cli",
+          "to": "artifact_store",
+          "label": "上傳 build context",
+          "payload": "app bundle, config, release channel",
+          "annotation": "build context 以 artifact 形式保存，確保同一版 release 可被追溯與重新建置。"
+        },
+        {
+          "from": "artifact_store",
+          "to": "postgres",
+          "label": "登記 build record",
+          "payload": "build_id, artifact_uri, git_sha, status",
+          "annotation": "資料庫保存 build metadata；大型二進位檔保留在 Artifact Store。"
+        },
+        {
+          "from": "postgres",
+          "to": "admin_console",
+          "label": "更新建置狀態",
+          "payload": "build_id, status, download_url",
+          "annotation": "管理後台使用 build record 呈現目前狀態與下載入口。"
+        },
+        {
+          "from": "artifact_store",
+          "to": "email_provider",
+          "label": "通知建置完成",
+          "payload": "release_name, download_url, changelog",
+          "annotation": "當 artifact 可下載時，通知指定維運或產品人員。"
+        }
+      ]
+    },
+    {
+      "id": "darams_daily_prediction",
+      "name": "TEJ 每日預測",
+      "category": "DARAMS",
+      "summary": "TEJ bars 經 Alpha Engine、Meta Signal 與 Portfolio Engine 轉成下一交易日候選持倉，並保存監控所需狀態。",
+      "steps": [
+        {
+          "from": "data_ingestion",
+          "to": "alpha_engine",
+          "label": "傳入標準化 bars",
+          "payload": "security_id, tradetime, open, high, low, close, volume",
+          "annotation": "Alpha Engine 必須以當次 bars 的 security_id/tradetime key 對齊 cache，避免 stale alpha row 進入 OOS portfolio。"
+        },
+        {
+          "from": "alpha_engine",
+          "to": "meta_signal",
+          "label": "輸出 alpha features",
+          "payload": "security_id, tradetime, alpha_id, alpha_value",
+          "annotation": "WQ101 alpha 只是 feature universe，必須由 Meta Signal 聚合後才能形成 final trading signal。"
+        },
+        {
+          "from": "meta_signal",
+          "to": "portfolio_engine",
+          "label": "產生 signal score",
+          "payload": "security_id, score, model_id, signal_time",
+          "annotation": "Portfolio Engine 依 entry_rank / exit_rank / max_turnover / min_holding_days 建立低換手目標權重。"
+        },
+        {
+          "from": "portfolio_engine",
+          "to": "postgres",
+          "label": "保存預測與權重",
+          "payload": "prediction_run_id, target_weights, model_id",
+          "annotation": "保存 run metadata 讓回測、報表與 reviewer-facing 診斷能追溯同一批輸出。"
+        },
+        {
+          "from": "portfolio_engine",
+          "to": "monitoring",
+          "label": "提供策略狀態",
+          "payload": "daily_pnl, turnover, holdings, exposure",
+          "annotation": "Monitoring 後續以策略狀態計算 drift、IC、drawdown 與 alert。"
+        }
+      ]
+    },
+    {
+      "id": "monitoring_to_adaptation",
+      "name": "監控驅動 Adaptation",
+      "category": "DARAMS",
+      "summary": "監控層寫入 metrics 與 alerts，Adaptation 依 alert 或 rolling 指標決定是否 retrain 或挑選 model pool 候選。",
+      "steps": [
+        {
+          "from": "monitoring",
+          "to": "postgres",
+          "label": "寫入 monitoring_metrics",
+          "payload": "metric_time, monitor_type, metric_name, metric_value, dimension",
+          "annotation": "所有四層監控指標應進入統一 monitoring_metrics 表，避免 adaptation 直接依賴零散記憶體狀態。"
+        },
+        {
+          "from": "monitoring",
+          "to": "redis",
+          "label": "更新 alert state",
+          "payload": "alert_id, severity, dimension, last_seen_at",
+          "annotation": "Redis 保存短期警示狀態，供 API 或 dashboard 快速查詢。"
+        },
+        {
+          "from": "postgres",
+          "to": "adaptation",
+          "label": "讀取近期監控結果",
+          "payload": "critical_alert_count, rolling_ic, drawdown",
+          "annotation": "Phase B 的目標是讓 trigger 由監控表或 alerts 驅動，形成 Monitoring -> Adaptation 的閉環。"
+        },
+        {
+          "from": "adaptation",
+          "to": "meta_signal",
+          "label": "訓練候選模型",
+          "payload": "training_window, feature_set, cutoff_time",
+          "annotation": "訓練資料必須遵守 signal_time 與 label_available_at 分離，shadow evaluation 也需與 trigger window 分開。"
+        },
+        {
+          "from": "adaptation",
+          "to": "postgres",
+          "label": "登記 model_registry",
+          "payload": "model_id, trained_at, holdout_metrics, status",
+          "annotation": "model_registry 記錄模型版本、訓練窗口、特徵集合、超參數與 regime fingerprint。"
+        }
+      ]
+    }
+  ]
+}

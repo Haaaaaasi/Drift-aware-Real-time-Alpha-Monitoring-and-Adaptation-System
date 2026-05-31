@@ -472,7 +472,6 @@ def _wq048(close, ind):
 
 
 def _wq049(close):
-    sma12 = _ts_mean(close, 12)
     cond = ((_delay(close, 20) - _delay(close, 10)) / 10) > ((_delay(close, 10) - close) / 10)
     return pd.DataFrame(
         np.where(cond.values, 1.0, -1.0), index=close.index, columns=close.columns
@@ -517,7 +516,6 @@ def _wq054(open_, close, high, low):
 
 
 def _wq055(vol, close, high, low):
-    h_range = (high - low).replace(0, np.nan)
     return -1 * _correlation(
         _rank((close - _ts_min(low, 12)) / ((_ts_max(high, 12) - _ts_min(low, 12)).replace(0, np.nan))),
         _rank(vol),

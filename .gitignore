@@ -44,6 +44,13 @@ Thumbs.db
 # Claude
 .claude/
 
+# Agent-local handoff files
+AGENTS.md
+AGENTS*.md
+agents.md
+agent.md
+CLAUDE.md
+
 # Internal docs
 docs/superpowers/
 
@@ -56,6 +63,24 @@ mlruns/
 *.h5
 *.pkl
 *.joblib
+
+# Generated experiment/report outputs
+# 已追蹤的正式報告不受影響；新的長路徑實驗輸出預設留在本機。
+reports/adaptation_ab/ab_*/
+reports/adaptation_ab/*_20??????/
+reports/adaptation_ab/*_20??????.md
+reports/adaptation_ab/experiment_logs/
+reports/adaptation_ab/model_pool_*_runs/
+reports/adaptation_ab/model_pool_repro_checks/
+reports/adaptation_evaluation/
+reports/alpha_audit/
+!reports/adaptation_ab/final_robustness_20260518/
+!reports/adaptation_ab/final_robustness_20260518/**
+reports/live/
+reports/live_exports/
+reports/live_runs/
+reports/live_smoke*/
+reports/simulations/
 
 # Grafana provisioned data
 grafana_data/

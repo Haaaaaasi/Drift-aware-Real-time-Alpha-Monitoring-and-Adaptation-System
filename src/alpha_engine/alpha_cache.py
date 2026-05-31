@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.alpha_engine.wq101_python import compute_wq101_alphas
@@ -32,6 +33,7 @@ logger = get_logger("alpha_cache")
 TEJ_CACHE_PATH = Path("data/alpha_cache/wq101_alphas.parquet")
 CSV_CACHE_PATH = Path("data/alpha_cache/wq101_alphas_csv.parquet")
 CACHE_PATH = TEJ_CACHE_PATH
+CACHE_COLUMNS = ["security_id", "tradetime", "alpha_id", "alpha_value"]
 
 
 def cache_path_for_data_source(data_source: str) -> Path:
@@ -122,6 +124,96 @@ def _validate_cache_manifest(path: Path, expected_data_source: str | None) -> No
         )
 
 
+def _normalise_cache_frame(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df["tradetime"] = pd.to_datetime(df["tradetime"])
+    df["security_id"] = df["security_id"].astype(str)
+    return df
+
+
+def _align_to_bar_keys(alpha_panel: pd.DataFrame, bars: pd.DataFrame) -> pd.DataFrame:
+    """Return only alpha rows whose (security_id, tradetime) exists in bars."""
+    if alpha_panel.empty:
+        return alpha_panel
+    bars_key = bars[["security_id", "tradetime"]].drop_duplicates().copy()
+    bars_key["security_id"] = bars_key["security_id"].astype(str)
+    bars_key["tradetime"] = pd.to_datetime(bars_key["tradetime"])
+    if bars_key.empty:
+        return alpha_panel.iloc[0:0].reset_index(drop=True)
+    before = len(alpha_panel)
+
+    # 正式 TEJ cache 已超過 1 億列；一次性 merge 會額外建立大型 join indexer。
+    # 依 alpha_id 分批 semi-join，只保留一個全域 boolean mask，降低補跑五月資料時的峰值記憶體。
+    keep_mask = np.zeros(before, dtype=bool)
+    group_positions = alpha_panel.groupby("alpha_id", sort=False).indices
+    for positions in group_positions.values():
+        chunk_keys = alpha_panel.iloc[positions][["security_id", "tradetime"]].copy()
+        chunk_keys["__row_pos"] = positions
+        matched = chunk_keys.merge(
+            bars_key,
+            on=["security_id", "tradetime"],
+            how="inner",
+            copy=False,
+        )
+        if not matched.empty:
+            keep_mask[matched["__row_pos"].to_numpy(dtype=np.int64, copy=False)] = True
+
+    rows_after = int(keep_mask.sum())
+    if rows_after == before:
+        return alpha_panel.reset_index(drop=True)
+
+    aligned = alpha_panel.loc[keep_mask].reset_index(drop=True)
+    if rows_after != before:
+        logger.info(
+            "alpha_panel_aligned_to_bars",
+            rows_before=before,
+            rows_after=rows_after,
+        )
+    return aligned
+
+
+def _read_cache_slice(
+    path: Path,
+    *,
+    expected_data_source: str | None = None,
+    start: pd.Timestamp | None = None,
+    end: pd.Timestamp | None = None,
+    alpha_ids: list[str] | None = None,
+) -> pd.DataFrame | None:
+    """Read only the requested cache window and alpha ids."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    _validate_cache_manifest(path, expected_data_source)
+
+    filters: list[tuple[str, str, object]] = []
+    if start is not None:
+        filters.append(("tradetime", ">=", pd.Timestamp(start)))
+    if end is not None:
+        filters.append(("tradetime", "<=", pd.Timestamp(end)))
+    if alpha_ids is not None:
+        unique_alpha_ids = sorted({str(a) for a in alpha_ids})
+        if not unique_alpha_ids:
+            return pd.DataFrame(columns=CACHE_COLUMNS)
+        filters.append(("alpha_id", "in", unique_alpha_ids))
+
+    df = pd.read_parquet(
+        path,
+        columns=CACHE_COLUMNS,
+        filters=filters or None,
+    )
+    df = _normalise_cache_frame(df)
+    logger.info(
+        "cache_slice_read",
+        path=str(path),
+        rows=len(df),
+        start=str(pd.Timestamp(start).date()) if start is not None else None,
+        end=str(pd.Timestamp(end).date()) if end is not None else None,
+        n_alpha_ids=len(alpha_ids) if alpha_ids is not None else None,
+    )
+    return df
+
+
 def read_cache(
     path: Path = CACHE_PATH,
     *,
@@ -132,9 +224,7 @@ def read_cache(
     if not path.exists():
         return None
     _validate_cache_manifest(path, expected_data_source)
-    df = pd.read_parquet(path)
-    df["tradetime"] = pd.to_datetime(df["tradetime"])
-    df["security_id"] = df["security_id"].astype(str)
+    df = _normalise_cache_frame(pd.read_parquet(path, columns=CACHE_COLUMNS))
     logger.info("cache_read", path=str(path), rows=len(df))
     return df
 
@@ -183,13 +273,46 @@ def compute_with_cache(
     """
     cache_path = Path(cache_path)
     expected_data_source = data_source or _infer_data_source_from_cache_path(cache_path)
-    existing = None if force_recompute else read_cache(
-        cache_path,
-        expected_data_source=expected_data_source,
-    )
 
     bars = bars.copy()
     bars["tradetime"] = pd.to_datetime(bars["tradetime"])
+    bar_max_date = bars["tradetime"].max()
+    bar_min_date = bars["tradetime"].min()
+
+    existing = None
+    if not force_recompute and cache_path.exists():
+        manifest = read_cache_manifest(cache_path)
+        _validate_cache_manifest(cache_path, expected_data_source)
+        if manifest is not None:
+            cache_start = pd.Timestamp(manifest["start"])
+            cache_end = pd.Timestamp(manifest["end"])
+            if cache_start <= bar_min_date and bar_max_date <= cache_end:
+                result = _read_cache_slice(
+                    cache_path,
+                    expected_data_source=expected_data_source,
+                    start=bar_min_date,
+                    end=bar_max_date,
+                    alpha_ids=alpha_ids,
+                )
+                if result is not None:
+                    bar_sids = set(bars["security_id"].astype(str).unique())
+                    cache_sids = set(result["security_id"].astype(str).unique())
+                    if not bar_sids or (bar_sids & cache_sids):
+                        return _align_to_bar_keys(result, bars)
+                    logger.info(
+                        "cache_universe_mismatch_recomputing",
+                        n_bar_sids=len(bar_sids),
+                        n_cache_sids=len(cache_sids),
+                    )
+                    fresh = compute_wq101_alphas(bars, alpha_ids=None)
+                    if alpha_ids is not None:
+                        fresh = fresh[fresh["alpha_id"].isin(alpha_ids)].reset_index(drop=True)
+                    return _align_to_bar_keys(fresh, bars)
+
+        existing = read_cache(
+            cache_path,
+            expected_data_source=expected_data_source,
+        )
 
     # Universe consistency check：若 cache 與 bars 的 security_id 完全不交集（例如
     # production cache vs synthetic tests），cache 對本次呼叫不適用，直接重算且不
@@ -206,7 +329,7 @@ def compute_with_cache(
             fresh = compute_wq101_alphas(bars, alpha_ids=None)
             if alpha_ids is not None:
                 fresh = fresh[fresh["alpha_id"].isin(alpha_ids)].reset_index(drop=True)
-            return fresh
+            return _align_to_bar_keys(fresh, bars)
 
     if existing is None:
         logger.info("cache_cold_start", force=force_recompute)
@@ -244,8 +367,6 @@ def compute_with_cache(
 
     # 只在 result 實際超出 bars 日期範圍時才 filter，避免 104M-row cache 觸發
     # 不必要的 pandas block consolidate / object-dtype copy 而 OOM
-    bar_max_date = bars["tradetime"].max()
-    bar_min_date = bars["tradetime"].min()
     result_min = result["tradetime"].min()
     result_max = result["tradetime"].max()
     if result_min < bar_min_date or result_max > bar_max_date:
@@ -256,4 +377,4 @@ def compute_with_cache(
     if alpha_ids is not None:
         result = result[result["alpha_id"].isin(alpha_ids)].reset_index(drop=True)
 
-    return result
+    return _align_to_bar_keys(result, bars)

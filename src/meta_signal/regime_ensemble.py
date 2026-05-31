@@ -5,7 +5,6 @@ TODO (MVP v3): Full HMM-based regime identification and ensemble switching.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from src.common.logging import get_logger
