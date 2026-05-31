@@ -185,10 +185,18 @@ reports/alpha_ic_analysis/effective_alphas.json
 
 #### 3. 執行離線研究 pipeline
 
-不依賴外部資料的 smoke run：
+先確認 CLI 入口可正常載入：
 
 ```powershell
-python -m pipelines.daily_batch_pipeline --synthetic
+python -m pipelines.daily_batch_pipeline --help
+python -m pipelines.predict_next_day --help
+python -m pipelines.live_daily_runner --help
+```
+
+不依賴外部資料的快速 smoke run：
+
+```powershell
+python -m pipelines.daily_batch_pipeline --synthetic --start 2024-01-01 --end 2024-01-15
 ```
 
 使用 TEJ parquet 與 Python WQ101 的預設正式路徑：
@@ -211,7 +219,7 @@ python -m pipelines.daily_batch_pipeline --data-source tej --start 2024-07-01 --
 
 #### 4. 產生下一交易日目標持股
 
-預設使用 TEJ parquet、Python WQ101 與 `effective_alphas.json`：
+預設使用 TEJ parquet、Python WQ101 與 `effective_alphas.json`。這是正式推論流程，會讀取 TEJ parquet、alpha cache 並訓練當次 meta model；首次執行或 cache miss 時可能需要數分鐘以上，不適合作為快速 smoke test。
 
 ```powershell
 python -m pipelines.predict_next_day --data-source tej --top-k 10
@@ -231,6 +239,8 @@ reports/predictions/
 
 #### 5. 每日 live workflow
 
+Live workflow 需要本機已有 TEJ parquet、alpha cache，且 `predict-only` 模式需要既有 production model artifact。若只是檢查入口，請先使用 `python -m pipelines.live_daily_runner --help`。
+
 若要把每日 TEJ CSV append 到正式 parquet，並接著產生 live recommendation：
 
 ```powershell
@@ -243,7 +253,7 @@ python -m pipelines.live_daily_runner --tej-input TEJ_YYYYMMDD.csv
 python -m pipelines.live_daily_runner --tej-input TEJ_YYYYMMDD.csv --dry-run-ingest
 ```
 
-只用既有資料跑 predict-only：
+已有 production artifact 時，只用既有資料跑 predict-only：
 
 ```powershell
 python -m pipelines.live_daily_runner --mode predict-only --production-artifact artifacts/models/<model_id>
