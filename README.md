@@ -125,8 +125,152 @@ Final Report 前預計完成以下項目：
 
 ### 專案說明
 
-<!-- Final Report 階段再補上完整專案說明 -->
+DARAMS（Drift-aware Real-time Alpha Monitoring and Adaptation System）是一個以台股日頻資料為研究對象的量化研究系統，重點不是尋找單一最高報酬策略，而是建立一條可以被重現、監控與比較的 alpha lifecycle：從資料標準化、WorldQuant 101 Alpha 特徵計算、meta model 訊號生成、portfolio construction、risk / execution、delayed labeling，到 drift monitoring 與 adaptation。
+
+本專案的核心設計是把 WorldQuant 101 Alpha 視為 **feature engine**，而不是直接交易訊號。所有 alpha 會先經過 IC 篩選、point-in-time feature snapshot 與 meta model 聚合，再進入投組與風控流程。這樣可以避免把單一 alpha 的短期績效誤認為穩定策略，也能讓後續監控與 adaptation 有明確的比較基準。
+
+正式研究路徑使用 TEJ survivorship-correct parquet 作為資料來源，並以 Python pandas 版本 WQ101 作為預設 alpha engine。DolphinDB 相關程式介面僅作為可選 real mode 連接，不是離線研究與每日預測的必要依賴。為避免 look-ahead bias，正式 alpha universe 使用 IS-only selection，且 OOS 實驗期間固定為 2024-07-01 至 2026-04-30。
+
+Final Report 階段的 reviewer-facing baseline 採用：
+
+- 資料來源：`data/tw_stocks_tej.parquet`
+- Alpha 清單：`reports/alpha_ic_analysis/effective_alphas.json`
+- Portfolio：`turnover_aware_topk`
+- Execution：`next_vwap` 為主、`next_open` 為輔
+- Baseline strategy：`scheduled_20`
+
+在 frozen OOS 設定下，`scheduled_20` 於 `next_vwap` execution 的累積報酬為 `22.337%`、Sharpe 為 `0.587`、最大回撤為 `-41.907%`；於 `next_open` execution 的累積報酬為 `36.606%`、Sharpe 為 `0.771`、最大回撤為 `-36.374%`。結果顯示 adaptation baseline 明顯優於 no-adapt 與一般等權 benchmark，但相對 liquidity-filtered benchmark 的優勢較小，且 drawdown 仍偏深。因此本專案的最終結論是：drift-aware adaptation 在此資料與成本假設下具有可觀察的改善效果，但仍需謹慎處理交易成本、流動性與風險暴露，不應解讀為已可直接上線的交易策略。
 
 ### 使用方式
 
-<!-- Final Report 階段再補上正式使用方式 -->
+本 repo 保留正式展示與可執行主流程；大型資料、研究中間產物、舊測試與 agent memory 不納入 Git。若要重現正式流程，請先準備 Python 3.11 與 TEJ 資料檔。
+
+#### 1. 安裝環境
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+如需使用 PostgreSQL、Redis、Grafana 或 API，請先建立本機環境變數：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+#### 2. 準備 TEJ 資料
+
+正式路徑預設讀取：
+
+```text
+data/tw_stocks_tej.parquet
+data/tw_stocks_tej_universe.parquet
+```
+
+若手上是 TEJ 匯出的原始 CSV，可使用保留的 ingestion script 轉成正式 parquet：
+
+```powershell
+python scripts/ingest_tej_csv.py --input OHLSV20182022.csv OHLSV202320260502.csv
+```
+
+Alpha selection 的正式清單已保留在：
+
+```text
+reports/alpha_ic_analysis/effective_alphas.json
+```
+
+這個檔案是 runtime 會讀取的必要設定，不屬於一般 report artifact。
+
+#### 3. 執行離線研究 pipeline
+
+不依賴外部資料的 smoke run：
+
+```powershell
+python -m pipelines.daily_batch_pipeline --synthetic
+```
+
+使用 TEJ parquet 與 Python WQ101 的預設正式路徑：
+
+```powershell
+python -m pipelines.daily_batch_pipeline --data-source tej
+```
+
+使用 XGBoost meta model：
+
+```powershell
+python -m pipelines.daily_batch_pipeline --data-source tej --signal-method ml_meta
+```
+
+指定期間：
+
+```powershell
+python -m pipelines.daily_batch_pipeline --data-source tej --start 2024-07-01 --end 2026-04-30
+```
+
+#### 4. 產生下一交易日目標持股
+
+預設使用 TEJ parquet、Python WQ101 與 `effective_alphas.json`：
+
+```powershell
+python -m pipelines.predict_next_day --data-source tej --top-k 10
+```
+
+指定 as-of date：
+
+```powershell
+python -m pipelines.predict_next_day --data-source tej --as-of 2026-04-30 --top-k 10
+```
+
+輸出會寫入：
+
+```text
+reports/predictions/
+```
+
+#### 5. 每日 live workflow
+
+若要把每日 TEJ CSV append 到正式 parquet，並接著產生 live recommendation：
+
+```powershell
+python -m pipelines.live_daily_runner --tej-input TEJ_YYYYMMDD.csv
+```
+
+只檢查 append，不執行 live pipeline：
+
+```powershell
+python -m pipelines.live_daily_runner --tej-input TEJ_YYYYMMDD.csv --dry-run-ingest
+```
+
+只用既有資料跑 predict-only：
+
+```powershell
+python -m pipelines.live_daily_runner --mode predict-only --production-artifact artifacts/models/<model_id>
+```
+
+#### 6. 啟動 API 與 dashboard 服務
+
+```powershell
+docker compose up -d postgres redis grafana
+python main.py api
+```
+
+API 啟動後可開啟：
+
+```text
+http://127.0.0.1:8000/live
+```
+
+若要直接用 Docker Compose 啟動 API service：
+
+```powershell
+docker compose up -d api
+```
+
+#### 7. 注意事項
+
+- 正式研究請使用 `--data-source tej`；yfinance CSV 僅保留 demo / 反例用途，必須明確加上 `--allow-yfinance` 才能使用。
+- DolphinDB 不是預設離線研究依賴，只有在指定 real mode 或 `--alpha-source dolphindb` 時才需要。
+- `reports/alpha_ic_analysis/effective_alphas.json` 是必要設定檔，請勿刪除或移動。
+- `memory/`、`tests/`、`notebooks/`、大型 reports 與一次性診斷腳本已從正式 repo 中排除，以維持乾淨展示狀態。
