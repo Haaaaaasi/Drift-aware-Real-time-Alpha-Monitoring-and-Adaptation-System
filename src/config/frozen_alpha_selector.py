@@ -1,7 +1,6 @@
 """Frozen alpha selector config loader.
 
 本模組只負責把 reviewer-facing frozen YAML 轉成 pipeline 參數覆寫值。
-研究理由與限制寫在 docs/final_robustness_holdout_protocol.md。
 """
 
 from __future__ import annotations

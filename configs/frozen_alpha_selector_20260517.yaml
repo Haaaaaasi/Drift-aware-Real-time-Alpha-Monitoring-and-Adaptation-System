@@ -1,5 +1,4 @@
 # DARAMS frozen alpha selector specification.
-# Traditional Chinese rationale is documented in docs/final_robustness_holdout_protocol.md.
 
 frozen_selector_id: incumbent55_rolling_topk20_w126_pen10_20260517
 frozen_at: "2026-05-17"
@@ -28,10 +27,6 @@ alpha_universe:
   exclude_indclass_cap_alphas: true
   n_live_alphas_after_exclusion: 55
   expansion_status: STOPPED
-  rejected_expansion_evidence:
-    all_valid_82_report: reports/adaptation_ab/rolling_topk_all_valid_oos_20260516/all_valid_experiment_summary.md
-    admission_gate_matrix: reports/adaptation_ab/admission_gate_matrix_20260517/matrix_summary.csv
-    admission_gate_attribution: reports/adaptation_ab/admission_gate_attribution_20260517/admitted_alpha_attribution_summary.md
 
 selector:
   name: rolling_topk
@@ -77,13 +72,6 @@ labels:
   horizon_days: 5
   purge_days: 5
   delayed_label_required: true
-
-canonical_artifacts:
-  primary_next_vwap_run: reports/adaptation_ab/rolling_topk_stability_matrix_20260514/sim_20240701_20260430_top10_sched20_rtop20_w126_pen10_nextvwap
-  secondary_next_open_run: reports/adaptation_ab/rolling_topk_best_execution_check_20260514/sim_20240701_20260430_top10_sched20_rtop20_w126_pen10_nextopen
-  robustness_package: reports/adaptation_ab/rolling_topk_validation_20260514
-  final_p0_report: reports/adaptation_ab/final_robustness_20260517/final_robustness_summary.md
-  holdout_protocol: docs/final_robustness_holdout_protocol.md
 
 prospective_holdout_rules:
   report_all_future_months: true

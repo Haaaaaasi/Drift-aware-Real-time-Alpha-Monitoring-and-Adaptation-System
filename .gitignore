@@ -53,6 +53,11 @@ CLAUDE.md
 
 # Internal docs
 docs/superpowers/
+docs/alpha_selection_design.md
+docs/deprecation_plan.md
+docs/final_robustness_holdout_protocol.md
+docs/workflow_explorer.html
+docs/workflow_flows.json
 
 # Data & artifacts
 data/
@@ -65,7 +70,10 @@ mlruns/
 *.joblib
 
 # Generated experiment/report outputs
-# 已追蹤的正式報告不受影響；新的長路徑實驗輸出預設留在本機。
+# 正式 repo 只保留 runtime 會讀取的 effective alpha 清單。
+reports/*
+!reports/alpha_ic_analysis/
+!reports/alpha_ic_analysis/effective_alphas.json
 reports/adaptation_ab/ab_*/
 reports/adaptation_ab/*_20??????/
 reports/adaptation_ab/*_20??????.md
@@ -74,13 +82,34 @@ reports/adaptation_ab/model_pool_*_runs/
 reports/adaptation_ab/model_pool_repro_checks/
 reports/adaptation_evaluation/
 reports/alpha_audit/
-!reports/adaptation_ab/final_robustness_20260518/
-!reports/adaptation_ab/final_robustness_20260518/**
 reports/live/
 reports/live_exports/
 reports/live_runs/
 reports/live_smoke*/
 reports/simulations/
+
+# Local-only research handoff, tests, notebooks, and deprecated engines
+memory/
+tests/
+notebooks/
+dolphindb/
+pipelines/replay_pipeline.py
+
+# Local-only one-off research/reporting scripts
+scripts/analyze_*.py
+scripts/backfill_alpha.py
+scripts/demo_monitoring_2026.py
+scripts/diagnose_*.py
+scripts/download_tw_stocks.py
+scripts/export_results.py
+scripts/generate_report.py
+scripts/ingest_csv_to_dolphindb.py
+scripts/ingest_experiment_report.py
+scripts/ingest_final_robustness_bundle.py
+scripts/run_*_workflow.py
+scripts/run_is_oos_validation.py
+scripts/summarize_model_pool_selector_matrix.py
+scripts/wp9_signal_diagnostics.py
 
 # Grafana provisioned data
 grafana_data/

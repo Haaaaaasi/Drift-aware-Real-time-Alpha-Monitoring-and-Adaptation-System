@@ -950,8 +950,8 @@ def _write_experiment_summary(
     lines.extend([
         "",
         "## 延伸分析",
-        "詳細的 regime-stratified 分析、paired t-test、drift 指標疊圖請見 ",
-        "`notebooks/03_adaptation_evaluation.py`。",
+        "regime-stratified 分析、paired t-test 與 drift 指標疊圖屬於本機研究附錄，",
+        "不包含在正式 repo 的最小發佈範圍內。",
         "",
     ])
 

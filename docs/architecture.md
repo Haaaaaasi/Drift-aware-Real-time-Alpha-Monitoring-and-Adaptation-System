@@ -39,7 +39,7 @@ Alpha engine 目前以 `src/alpha_engine/wq101_python.py` 的 pandas WQ101 實�
 
 ## 3. Alpha selection 主線
 
-2026-05-13 起，alpha selection 不再被視為單純設定檔清單，而是 Alpha Engine 與 Meta Signal 之間的 point-in-time 決策層。完整規格見 `docs/alpha_selection_design.md`。
+2026-05-13 起，alpha selection 不再被視為單純設定檔清單，而是 Alpha Engine 與 Meta Signal 之間的 point-in-time 決策層；正式凍結設定由 `configs/frozen_alpha_selector_20260517.yaml` 管控。
 
 目前 `reports/alpha_ic_analysis/effective_alphas.json` 的定位改為 `static_is` selector 的輸入，不再是整個系統的最終 single source of truth。第一階段仍使用 TEJ IS-only selection 重現既有 frozen OOS baseline：
 
