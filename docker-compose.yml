@@ -1,17 +1,4 @@
 services:
-  dolphindb:
-    image: dolphindb/dolphindb:v2.00.18
-    container_name: darams-dolphindb
-    ports:
-      - "8848:8848"
-    volumes:
-      - dolphindb_data:/data
-      - ./dolphindb/scripts:/scripts
-      - ./dolphindb/modules:/modules
-    environment:
-      - MAX_MEM_SIZE=4
-    restart: unless-stopped
-
   postgres:
     image: postgres:16-alpine
     container_name: darams-postgres
@@ -51,10 +38,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-darams_dev}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DOLPHINDB_HOST: dolphindb
-      DOLPHINDB_PORT: 8848
-      DOLPHINDB_USER: ${DOLPHINDB_USER:-admin}
-      DOLPHINDB_PASSWORD: ${DOLPHINDB_PASSWORD:-123456}
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://localhost:5000}
     volumes:
       - .:/app
@@ -85,7 +68,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  dolphindb_data:
   postgres_data:
   redis_data:
   grafana_data:
