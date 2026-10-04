@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -255,6 +256,88 @@ def write_cache(
     logger.info("cache_written", path=str(path), rows=len(df))
 
 
+def _convert_file_cache_to_dataset(path: Path) -> None:
+    """將舊單檔 parquet cache 原地轉成 parquet dataset 目錄。"""
+    if not path.exists() or path.is_dir():
+        return
+    if not path.is_file():
+        raise RuntimeError(f"Unsupported alpha cache path type: {path}")
+
+    legacy_path = path.with_name(f"{path.stem}.single_file{path.suffix}")
+    counter = 1
+    while legacy_path.exists():
+        legacy_path = path.with_name(
+            f"{path.stem}.single_file_{counter}{path.suffix}"
+        )
+        counter += 1
+
+    path.replace(legacy_path)
+    try:
+        path.mkdir(parents=True, exist_ok=False)
+        legacy_path.replace(path / "part-00000.parquet")
+    except Exception:
+        if path.exists() and path.is_dir():
+            part = path / "part-00000.parquet"
+            if part.exists():
+                part.replace(legacy_path)
+            path.rmdir()
+        legacy_path.replace(path)
+        raise
+
+
+def _append_cache_part(
+    incremental: pd.DataFrame,
+    path: Path,
+    *,
+    data_source: str,
+    manifest: dict,
+) -> None:
+    """以新增 part 檔追加 cache，避免為了寫回而載入完整 2 億列 cache。"""
+    if incremental.empty:
+        return
+
+    path = Path(path)
+    _convert_file_cache_to_dataset(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    incremental = incremental.copy()
+    incremental["tradetime"] = pd.to_datetime(incremental["tradetime"])
+    incremental["security_id"] = incremental["security_id"].astype(str)
+    incremental = incremental.drop_duplicates(
+        subset=["security_id", "tradetime", "alpha_id"], keep="last"
+    )
+
+    start = pd.Timestamp(incremental["tradetime"].min()).date().isoformat()
+    end = pd.Timestamp(incremental["tradetime"].max()).date().isoformat()
+    part_name = f"part-{start}-{end}-{uuid4().hex[:8]}.parquet"
+    tmp = path / f".{part_name}.tmp"
+    final = path / part_name
+    incremental.to_parquet(tmp, index=False, compression="snappy")
+    tmp.replace(final)
+
+    write_cache_manifest(
+        path,
+        data_source=data_source,
+        rows=int(manifest.get("rows", 0)) + len(incremental),
+        n_securities=max(
+            int(manifest.get("n_securities", 0)),
+            int(incremental["security_id"].nunique()),
+        ),
+        n_alphas=max(
+            int(manifest.get("n_alphas", 0)),
+            int(incremental["alpha_id"].nunique()),
+        ),
+        start=pd.Timestamp(manifest["start"]),
+        end=incremental["tradetime"].max(),
+    )
+    logger.info(
+        "cache_incremental_part_written",
+        path=str(path),
+        part=str(final.name),
+        rows=len(incremental),
+    )
+
+
 def compute_with_cache(
     bars: pd.DataFrame,
     alpha_ids: list[str] | None = None,
@@ -308,6 +391,38 @@ def compute_with_cache(
                     if alpha_ids is not None:
                         fresh = fresh[fresh["alpha_id"].isin(alpha_ids)].reset_index(drop=True)
                     return _align_to_bar_keys(fresh, bars)
+
+            if cache_start <= bar_min_date and cache_end < bar_max_date:
+                bar_dates = bars["tradetime"].drop_duplicates().sort_values()
+                new_dates = bar_dates[bar_dates > cache_end]
+                if not new_dates.empty:
+                    lookback_start = new_dates.iloc[0] - pd.Timedelta(days=lookback_days)
+                    bars_slice = bars[bars["tradetime"] >= lookback_start]
+
+                    logger.info(
+                        "cache_incremental_manifest_path",
+                        new_dates=len(new_dates),
+                        lookback_start=str(lookback_start.date()),
+                        last_cached=str(cache_end.date()),
+                    )
+                    incremental = compute_wq101_alphas(bars_slice, alpha_ids=None)
+                    incremental = incremental[incremental["tradetime"] > cache_end]
+                    _append_cache_part(
+                        incremental,
+                        cache_path,
+                        data_source=expected_data_source,
+                        manifest=manifest,
+                    )
+
+                result = _read_cache_slice(
+                    cache_path,
+                    expected_data_source=expected_data_source,
+                    start=bar_min_date,
+                    end=bar_max_date,
+                    alpha_ids=alpha_ids,
+                )
+                if result is not None:
+                    return _align_to_bar_keys(result, bars)
 
         existing = read_cache(
             cache_path,
@@ -378,3 +493,106 @@ def compute_with_cache(
         result = result[result["alpha_id"].isin(alpha_ids)].reset_index(drop=True)
 
     return _align_to_bar_keys(result, bars)
+
+
+# ---------------------------------------------------------------------------
+# truncation（bars 修正後讓增量路徑重算）
+# ---------------------------------------------------------------------------
+def _part_time_range(pf) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """用 row-group 統計取 part 的 tradetime 範圍；沒有統計就串流掃描，不進 pandas。"""
+    import pyarrow.compute as pc
+
+    idx = pf.schema_arrow.get_field_index("tradetime")
+    lo = hi = None
+    for i in range(pf.metadata.num_row_groups):
+        st = pf.metadata.row_group(i).column(idx).statistics
+        if st is None or not st.has_min_max:
+            lo = hi = None
+            break
+        lo = st.min if lo is None else min(lo, st.min)
+        hi = st.max if hi is None else max(hi, st.max)
+    if lo is None:
+        for batch in pf.iter_batches(columns=["tradetime"], batch_size=2_000_000):
+            mm = pc.min_max(batch.column("tradetime")).as_py()
+            lo = mm["min"] if lo is None else min(lo, mm["min"])
+            hi = mm["max"] if hi is None else max(hi, mm["max"])
+    return pd.Timestamp(lo), pd.Timestamp(hi)
+
+
+def truncate_cache_after(path: str | Path, keep_through: pd.Timestamp) -> dict:
+    """刪除 cache 中 ``tradetime > keep_through`` 的列。
+
+    整個落在 keep_through 之後的 part 直接刪檔；跨界的 part 以 pyarrow 串流過濾重寫，
+    不把 2 億列讀進 pandas。單檔 cache 先原地轉成 dataset 目錄。manifest 的 end / rows
+    會同步更新，之後 ``compute_with_cache`` 會走 manifest 增量路徑補算被截掉的日期。
+    """
+    import pyarrow as pa
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
+
+    path = Path(path)
+    keep_through = pd.Timestamp(keep_through).normalize()
+    manifest = read_cache_manifest(path)
+    summary = {
+        "keep_through": str(keep_through.date()),
+        "removed_parts": [],
+        "rewritten_parts": [],
+        "noop": True,
+    }
+    if manifest is None or not path.exists() or pd.Timestamp(manifest["end"]) <= keep_through:
+        return summary
+    summary["noop"] = False
+    _convert_file_cache_to_dataset(path)
+
+    rows = 0
+    end: pd.Timestamp | None = None
+    for part in sorted(path.glob("*.parquet")):
+        # Windows 下檔案還開著就不能 unlink / replace，所以先在 with 裡讀完再動檔案
+        with pq.ParquetFile(part) as pf:
+            lo, hi = _part_time_range(pf)
+            num_rows = pf.metadata.num_rows
+            if lo > keep_through or hi <= keep_through:
+                straddle = None
+            else:
+                straddle = part.with_name(f".{part.name}.tmp")
+                writer = None
+                kept = 0
+                for batch in pf.iter_batches(batch_size=1_000_000):
+                    col = batch.column("tradetime")
+                    cutoff = pa.scalar(keep_through.to_datetime64()).cast(col.type)
+                    filtered = batch.filter(pc.less_equal(col, cutoff))
+                    if filtered.num_rows == 0:
+                        continue
+                    if writer is None:
+                        writer = pq.ParquetWriter(straddle, filtered.schema, compression="snappy")
+                    writer.write_batch(filtered)
+                    kept += filtered.num_rows
+                    part_max = pd.Timestamp(pc.max(filtered.column("tradetime")).as_py())
+                    end = part_max if end is None else max(end, part_max)
+                if writer is not None:
+                    writer.close()
+        if lo > keep_through:
+            part.unlink()
+            summary["removed_parts"].append(part.name)
+        elif straddle is None:
+            rows += num_rows
+            end = hi if end is None else max(end, hi)
+        elif kept == 0:
+            part.unlink()
+            summary["removed_parts"].append(part.name)
+        else:
+            straddle.replace(part)
+            rows += kept
+            summary["rewritten_parts"].append(part.name)
+
+    write_cache_manifest(
+        path,
+        data_source=manifest["data_source"],
+        rows=rows,
+        n_securities=int(manifest.get("n_securities", 0)),
+        n_alphas=int(manifest.get("n_alphas", 0)),
+        start=pd.Timestamp(manifest["start"]),
+        end=end if end is not None else keep_through,
+    )
+    logger.info("cache_truncated", path=str(path), **summary)
+    return summary

@@ -1,7 +1,8 @@
 """Run the daily live operating workflow end to end.
 
 流程：
-1. 可選：把每日 TEJ CSV append 到 data/tw_stocks_tej.parquet。
+1. 可選：``--sync-twse`` 從證交所官方端點抓缺的交易日與除權息 / 減資事件，重寫
+   anchor 之後的 bars（見 ``src/ingestion/twse_daily.py``）；或把每日 TEJ CSV append。
 2. 執行 daily_online_pipeline，沿用 production artifact 與前一筆 official holdings。
 3. 寫入 live operational tables，供 Grafana / API 顯示。
 """
@@ -26,11 +27,13 @@ from src.ingestion.tej_daily_append import (
     DEFAULT_UNIVERSE_OUTPUT,
     append_tej_daily_files,
 )
+from src.ingestion.twse_daily import sync_twse as run_twse_sync
 
 
 def run_live_daily(
     *,
     tej_input: list[str | Path] | None = None,
+    sync_twse: bool = False,
     mode: str = "auto",
     as_of: str | None = None,
     frozen_config: str | Path = DEFAULT_FROZEN_CONFIG,
@@ -54,7 +57,26 @@ def run_live_daily(
     """執行每日 live workflow，回傳 append 與 online run 的摘要。"""
 
     append_result = None
+    sync_result = None
     resolved_as_of = as_of
+    if sync_twse:
+        sync_result = run_twse_sync(
+            as_of=as_of,
+            bars_path=tej_output,
+            universe_path=universe_output,
+            backup_dir=backup_dir,
+            dry_run=dry_run_ingest,
+        )
+        if resolved_as_of is None:
+            resolved_as_of = sync_result["output_max_date"]
+        if as_of is None and not sync_result["fetched_dates"] and not dry_run_ingest:
+            # 沒有新交易日（假日或尚未發布）就不要重複產生同一天的 official run
+            return {
+                "sync": sync_result,
+                "append": None,
+                "live_run": None,
+                "message": "no new trading day; online run skipped",
+            }
     if tej_input:
         append_result = append_tej_daily_files(
             tej_input,
@@ -70,6 +92,7 @@ def run_live_daily(
 
     if dry_run_ingest or skip_online_run:
         return {
+            "sync": sync_result,
             "append": append_result.to_dict() if append_result is not None else None,
             "live_run": None,
             "message": "ingest dry-run completed" if dry_run_ingest else "online run skipped",
@@ -95,6 +118,7 @@ def run_live_daily(
         persist_db=persist_db,
     )
     return {
+        "sync": sync_result,
         "append": append_result.to_dict() if append_result is not None else None,
         "live_run": live_result,
         "message": "daily live workflow completed",
@@ -104,6 +128,7 @@ def run_live_daily(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tej-input", nargs="+", help="每日 TEJ OHLCV CSV；省略時只跑現有資料")
+    parser.add_argument("--sync-twse", action="store_true", help="從證交所官方端點同步缺的交易日與事件")
     parser.add_argument("--mode", choices=["auto", "predict-only", "train-only"], default="auto")
     parser.add_argument("--as-of", help="指定 live run as-of date；預設使用 append 後最新日期")
     parser.add_argument("--frozen-config", default=str(DEFAULT_FROZEN_CONFIG))
@@ -139,6 +164,7 @@ def main() -> None:
     args = _parse_args()
     result = run_live_daily(
         tej_input=args.tej_input,
+        sync_twse=args.sync_twse,
         mode=args.mode,
         as_of=args.as_of,
         frozen_config=args.frozen_config,

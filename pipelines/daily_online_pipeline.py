@@ -36,6 +36,7 @@ from src.alpha_selection import (
 from src.alpha_selection.snapshot import write_selection_artifacts
 from src.common.logging import get_logger, setup_logging
 from src.config.frozen_alpha_selector import load_frozen_alpha_selector
+from src.ingestion.twse_daily import raw_close_on
 from src.labeling.label_generator import LabelGenerator
 from src.live import LiveOperationalStore
 from src.meta_signal.ml_meta_model import MLMetaModel
@@ -170,10 +171,7 @@ def run_daily_online(
             persist_db=persist_db,
             as_of_ts=as_of_ts,
         )
-        last_prices = (
-            bars[bars["tradetime"] == as_of_ts][["security_id", "close"]]
-            .set_index("security_id")["close"]
-        )
+        last_prices = _last_prices_for_sizing(bars, as_of_ts)
         portfolio_result = build_live_portfolio(
             signals=signals,
             as_of_date=as_of_ts,
@@ -494,6 +492,21 @@ def _resolve_as_of(bars: pd.DataFrame, requested: date | None) -> pd.Timestamp:
     chosen = fallback.iloc[-1]
     logger.warning("as_of_not_in_bars", requested=str(requested), chosen=str(chosen.date()))
     return chosen
+
+
+def _last_prices_for_sizing(bars: pd.DataFrame, as_of_ts: pd.Timestamp) -> pd.Series:
+    """下單數量用原始價：anchor 之後的 bars 是向前還原價，會偏離實際成交價。"""
+    adjusted = (
+        bars[bars["tradetime"] == as_of_ts][["security_id", "close"]]
+        .set_index("security_id")["close"]
+    )
+    raw = raw_close_on(as_of_ts)
+    if raw is None:
+        return adjusted
+    common = adjusted.index.intersection(raw.index)
+    out = adjusted.copy()
+    out.loc[common] = raw.loc[common]
+    return out
 
 
 def _data_freshness(
