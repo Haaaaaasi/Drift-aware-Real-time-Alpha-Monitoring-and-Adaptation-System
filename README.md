@@ -32,27 +32,24 @@
 ## 系統架構
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph S1["資料與特徵"]
-        direction TB
-        A1["日 K 資料<br/>TEJ 還原股價 + 證交所每日同步"] --> A2["WQ101 Alpha Engine<br/>101 個 alpha，parquet 快取"]
-        A2 --> A3["Point-in-time Alpha Selector<br/>55 個候選，每次重訓選 20 個"]
+        direction LR
+        A1["日 K 資料<br/>TEJ + 證交所每日同步"] --> A2["WQ101 Alpha Engine<br/>101 個 alpha"] --> A3["Alpha Selector<br/>55 個候選，每次選 20 個"]
     end
     subgraph S2["訊號與交易"]
-        direction TB
-        B1["XGBoost Meta Model<br/>每 20 個交易日重訓"] --> B2["Portfolio<br/>turnover-aware top-k"]
-        B2 --> B3["Risk<br/>部位、曝險、換手上限"]
-        B3 --> B4["Execution (paper)<br/>T+1 成交，含交易成本"]
+        direction LR
+        B1["XGBoost Meta Model<br/>每 20 個交易日重訓"] --> B2["Portfolio<br/>turnover-aware top-k"] --> B3["Risk<br/>部位、曝險、換手上限"] --> B4["Execution (paper)<br/>T+1 成交，含成本"]
     end
     subgraph S3["回饋"]
-        direction TB
-        C1["Delayed Labeling<br/>標籤成熟後才可用"] --> C2["Monitoring<br/>Data / Alpha / Model / Strategy"]
-        C2 --> C3["Adaptation<br/>scheduled / triggered / model pool"]
+        direction LR
+        C1["Delayed Labeling<br/>標籤成熟後才可用"] --> C2["Monitoring<br/>四層監控與告警"] --> C3["Adaptation<br/>重選 alpha、重訓模型"]
     end
     S1 --> S2 --> S3
-    S3 -.-> S1
     S3 --> OPS["PostgreSQL、Grafana<br/>FastAPI Live Console"]
 ```
+
+Adaptation 的結果會回到上游，重選 alpha、重訓模型，形成閉環。
 
 | 層 | 目錄 | 責任 |
 |---|---|---|
