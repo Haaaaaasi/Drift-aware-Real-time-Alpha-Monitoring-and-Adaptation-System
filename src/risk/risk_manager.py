@@ -10,6 +10,35 @@ from src.common.logging import get_logger
 logger = get_logger(__name__)
 
 
+def drawdown_halt_active(
+    equity: list[float] | pd.Series,
+    threshold: float,
+    cooldown_days: int,
+) -> bool:
+    """回撤停損狀態：重播整條權益曲線，回傳最後一個交易日是否處於停損。
+
+    權益自高點回落達 ``threshold`` → 停損 ``cooldown_days`` 個交易日（含觸發日，期間空倉）；
+    期滿當日以當時權益為新高點恢復交易。不重設高點的話，空倉後權益不動、回撤永遠不回復，
+    會變成永久停損。
+
+    ``equity`` 每個元素是一個交易日「做決策時已知」的權益，呼叫端負責避免 look-ahead。
+    """
+    # ponytail: 每次呼叫 O(n) 重播，回測逐日呼叫是 O(n²)；n 為數百到數千日時無感，
+    # 要跑更長的日頻再改成有狀態版本。
+    peak = float("-inf")
+    halt_left = 0
+    for value in equity:
+        if halt_left > 0:
+            halt_left -= 1
+            if halt_left == 0:
+                peak = value
+            continue
+        peak = max(peak, value)
+        if value <= peak * (1.0 - threshold):
+            halt_left = cooldown_days
+    return halt_left > 0
+
+
 class RiskManager:
     """Apply risk constraints to portfolio targets before execution.
 
@@ -56,6 +85,13 @@ class RiskManager:
             Risk-adjusted targets with pre_risk=False.
         """
         adjusted = targets.copy()
+        if adjusted.empty:
+            # 沒有候選（例如 long-only 下全市場預測為負）：目標是空倉，
+            # 但仍要走下面的換手上限，不能一次整組清倉。
+            adjusted = pd.DataFrame({
+                "security_id": pd.Series(dtype=str),
+                "target_weight": pd.Series(dtype=float),
+            })
         constraint_log: dict[str, int] = {}
 
         # Drawdown halt
@@ -135,10 +171,7 @@ class RiskManager:
         previous: dict[str, float],
         constraint_log: dict[str, int | float],
     ) -> pd.DataFrame:
-        if adjusted.empty:
-            return adjusted
-
-        first = adjusted.iloc[0]
+        first = adjusted.iloc[0] if len(adjusted) else {}
         target = {
             str(row["security_id"]): float(row["target_weight"])
             for _, row in adjusted.iterrows()

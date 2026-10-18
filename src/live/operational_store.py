@@ -411,3 +411,56 @@ class LiveOperationalStore:
             return weights, shares, holding_days
         finally:
             conn.close()
+
+    def load_last_rebalance_date(
+        self,
+        as_of_date: date | datetime | pd.Timestamp,
+    ) -> date | None:
+        """最近一次實際調倉的 official as-of 日。
+
+        舊 run 的 metadata 沒有 ``rebalance_flag``——當時每次執行都調倉，視為 true。
+        """
+        conn = get_pg_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT max(as_of_date)
+                    FROM daily_live_runs
+                    WHERE is_official = true
+                      AND status = 'COMPLETED'
+                      AND mode <> 'train-only'
+                      AND as_of_date < %s
+                      AND coalesce(
+                            metadata->'portfolio_metrics'->>'rebalance_flag', 'true'
+                          ) = 'true'
+                    """,
+                    [pd.Timestamp(as_of_date).date()],
+                )
+                return cur.fetchone()[0]
+        finally:
+            conn.close()
+
+    def load_official_target_weights(
+        self,
+        as_of_date: date | datetime | pd.Timestamp,
+    ) -> pd.DataFrame:
+        """``as_of_date`` 之前每個 official as-of 日的 target 權重（同日多筆取最後完成的 run）。"""
+        conn = get_pg_connection()
+        try:
+            return pd.read_sql(
+                """
+                SELECT ps.as_of_date, ps.security_id, ps.target_weight
+                FROM portfolio_snapshots ps
+                JOIN (
+                    SELECT DISTINCT ON (as_of_date) run_id
+                    FROM daily_live_runs
+                    WHERE is_official = true AND as_of_date < %s
+                    ORDER BY as_of_date, run_finished_at DESC
+                ) r ON r.run_id = ps.run_id
+                """,
+                conn,
+                params=[pd.Timestamp(as_of_date).date()],
+            )
+        finally:
+            conn.close()

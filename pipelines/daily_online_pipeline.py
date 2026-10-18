@@ -15,6 +15,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import pandas as pd
+import yaml
 
 from pipelines.daily_batch_pipeline import load_csv_data
 from pipelines.simulate_recent import (
@@ -40,12 +41,18 @@ from src.ingestion.twse_daily import raw_close_on
 from src.labeling.label_generator import LabelGenerator
 from src.live import LiveOperationalStore
 from src.meta_signal.ml_meta_model import MLMetaModel
-from src.portfolio.live_service import LivePortfolioConfig, build_live_portfolio
+from src.portfolio.live_service import (
+    LivePortfolioConfig,
+    build_live_portfolio,
+    estimate_target_equity,
+)
+from src.risk.risk_manager import drawdown_halt_active
 
 setup_logging()
 logger = get_logger("daily_online_pipeline")
 
 DEFAULT_FROZEN_CONFIG = Path("configs/frozen_alpha_selector_20260517.yaml")
+RISK_CONFIG = Path("configs/risk_config.yaml")
 DEFAULT_ARTIFACT_ROOT = Path("artifacts/models")
 DEFAULT_OUTPUT_DIR = Path("reports/live")
 PRODUCTION_POINTER = "production.json"
@@ -172,7 +179,15 @@ def run_daily_online(
             as_of_ts=as_of_ts,
         )
         last_prices = _last_prices_for_sizing(bars, as_of_ts)
+        rebalance_due, halted = _rebalance_and_halt_state(
+            persist_db=persist_db,
+            bars=bars,
+            as_of_ts=as_of_ts,
+            rebalance_every=int(overrides["rebalance_every"]),
+        )
         portfolio_result = build_live_portfolio(
+            rebalance_due=rebalance_due,
+            halted=halted,
             signals=signals,
             as_of_date=as_of_ts,
             previous_weights=previous_weights,
@@ -640,6 +655,53 @@ def _load_previous_state(
     except Exception as exc:
         logger.warning("previous_live_state_load_failed", error=str(exc))
         return {}, {}, {}
+
+
+def _rebalance_and_halt_state(
+    *,
+    persist_db: bool,
+    bars: pd.DataFrame,
+    as_of_ts: pd.Timestamp,
+    rebalance_every: int,
+) -> tuple[bool, bool]:
+    """回傳 (今日是否調倉, 回撤停損是否生效)。
+
+    調倉節奏對齊回測：距上次調倉滿 ``rebalance_every`` 個交易日才調倉。停損門檻讀
+    ``configs/risk_config.yaml``。DB 讀不到狀態時退回「調倉、不停損」（舊行為）。
+    """
+    if not persist_db:
+        return True, False
+    try:
+        store = LiveOperationalStore()
+        last_rebalance = store.load_last_rebalance_date(as_of_ts)
+        target_weights = store.load_official_target_weights(as_of_ts)
+    except Exception as exc:
+        logger.warning("live_rebalance_halt_state_load_failed", error=str(exc))
+        return True, False
+
+    trading_days = pd.DatetimeIndex(bars["tradetime"].dt.normalize().unique())
+    days_since = (
+        rebalance_every
+        if last_rebalance is None
+        else int((trading_days > pd.Timestamp(last_rebalance)).sum())
+    )
+    rebalance_due = days_since >= rebalance_every
+
+    constraints = yaml.safe_load(RISK_CONFIG.read_text(encoding="utf-8"))["constraints"]
+    threshold = constraints.get("max_drawdown_halt")
+    equity = estimate_target_equity(target_weights, bars)
+    halted = bool(threshold) and drawdown_halt_active(
+        equity.tolist(), float(threshold), int(constraints["drawdown_cooldown_days"])
+    )
+    logger.info(
+        "live_rebalance_halt_state",
+        last_rebalance=str(last_rebalance),
+        days_since_rebalance=days_since,
+        rebalance_due=rebalance_due,
+        drawdown=None if equity.empty else round(float(equity.iloc[-1] / equity.max() - 1), 4),
+        halted=halted,
+    )
+    return rebalance_due, halted
 
 
 def _production_feature_snapshot(

@@ -4,7 +4,8 @@ constraints:
   max_position_weight: 0.10     # 10% per position
   max_gross_exposure: 1.0       # 100% gross exposure
   max_turnover: 1.0             # 100% turnover per rebalance
-  max_drawdown_halt: 0.20       # halt at 20% drawdown
+  max_drawdown_halt: 0.20       # 權益自高點回落 20% 即清倉停損；live 每日 run 會讀，設 0 關閉
+  drawdown_cooldown_days: 20    # 停損後空倉的交易日數，期滿以當時權益為新高點恢復
   min_daily_volume: 0           # minimum daily volume filter (0 = disabled)
 
 portfolio:

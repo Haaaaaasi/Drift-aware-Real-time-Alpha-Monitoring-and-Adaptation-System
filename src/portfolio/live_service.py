@@ -44,8 +44,14 @@ def build_live_portfolio(
     last_prices: pd.Series | dict[str, float],
     capital: float,
     config: LivePortfolioConfig,
+    rebalance_due: bool = True,
+    halted: bool = False,
 ) -> LivePortfolioResult:
-    """Build target holdings and trade recommendations for one live day."""
+    """Build target holdings and trade recommendations for one live day.
+
+    ``rebalance_due=False`` 時沿用前一日持股不調倉（對齊回測的 ``rebalance_every``）；
+    ``halted=True`` 時回撤停損生效，目標為空倉。
+    """
     previous_weights = _normalize_float_map(previous_weights)
     previous_shares = _normalize_int_map(previous_shares)
     holding_days = _normalize_int_map(holding_days)
@@ -66,17 +72,28 @@ def build_live_portfolio(
         max_turnover=config.max_turnover,
     )
 
-    targets = constructor.construct(
-        signals,
-        previous_weights=previous_weights,
-        holding_days=holding_days,
-    )
-    held_from_prev_count = int(targets.attrs.get("held_from_prev_count", 0))
-    forced_sells_count = int(targets.attrs.get("forced_sells_count", 0))
     turnover_cap_applied = False
-    if targets.empty:
-        current_weights: dict[str, float] = {}
+    rebalanced = not halted and (rebalance_due or not previous_weights)
+    current_weights: dict[str, float]
+    if halted:
+        current_weights = {}
+        held_from_prev_count, forced_sells_count = 0, len(previous_weights)
+    elif not rebalanced:
+        tradable = set(signals["security_id"].astype(str))
+        current_weights = {
+            sec: weight for sec, weight in previous_weights.items() if sec in tradable
+        }
+        held_from_prev_count = len(current_weights)
+        forced_sells_count = len(previous_weights) - len(current_weights)
     else:
+        targets = constructor.construct(
+            signals,
+            previous_weights=previous_weights,
+            holding_days=holding_days,
+        )
+        held_from_prev_count = int(targets.attrs.get("held_from_prev_count", 0))
+        forced_sells_count = int(targets.attrs.get("forced_sells_count", 0))
+        # 沒有候選時 targets 為空，仍交給 RiskManager 套換手上限，不直接清倉。
         adjusted = risk.apply_constraints(targets, previous_weights=previous_weights)
         turnover_cap_applied = bool(adjusted.attrs.get("turnover_cap_applied", False))
         current_weights = {
@@ -95,6 +112,8 @@ def build_live_portfolio(
         tail_cleanup_weight=config.tail_cleanup_weight,
         renormalize=config.renormalize_after_exit_cleanup,
     )
+    if halted:
+        exit_reasons = {sec: "drawdown_halt" for sec in previous_weights}
 
     targets = _weights_to_targets(
         weights=current_weights,
@@ -133,6 +152,8 @@ def build_live_portfolio(
     metrics: dict[str, float | int | bool] = {
         "n_targets": int(len(targets)),
         "n_recommendations": int(len(recommendations)),
+        "rebalance_flag": bool(rebalanced),
+        "drawdown_halted": bool(halted),
         "held_from_prev_count": held_from_prev_count,
         "forced_sells_count": forced_sells_count,
         "turnover_cap_applied": turnover_cap_applied,
@@ -147,6 +168,33 @@ def build_live_portfolio(
         snapshot=snapshot,
         metrics=metrics,
     )
+
+
+def estimate_target_equity(target_weights: pd.DataFrame, bars: pd.DataFrame) -> pd.Series:
+    """用歷次 target 權重與收盤價串出紙上權益曲線（起始 1.0，每個交易日一點）。
+
+    ``target_weights`` 欄位為 [as_of_date, security_id, target_weight]。假設目標權重在
+    run 當日收盤成交、不計成本，兩次 run 之間持股不動；只供回撤停損判斷，不是 execution PnL。
+    """
+    # ponytail: 沒有成交回報時的估算；匯入真實成交後應改讀 live_account_snapshots 的權益。
+    if target_weights.empty:
+        return pd.Series(dtype=float)
+    weights = target_weights.assign(
+        as_of_date=pd.to_datetime(target_weights["as_of_date"]),
+        security_id=target_weights["security_id"].astype(str),
+        target_weight=target_weights["target_weight"].astype(float),
+    ).pivot_table(
+        index="as_of_date", columns="security_id", values="target_weight", aggfunc="last"
+    ).fillna(0.0)
+    recent = bars[bars["tradetime"] >= weights.index[0]]
+    close = recent.assign(security_id=recent["security_id"].astype(str)).pivot(
+        index="tradetime", columns="security_id", values="close"
+    )
+    held = weights.reindex(close.index, method="ffill").reindex(
+        columns=close.columns, fill_value=0.0
+    )
+    daily = (held.shift(1) * close.pct_change(fill_method=None)).sum(axis=1)
+    return (1.0 + daily).cumprod()
 
 
 def apply_exit_discipline(
@@ -246,13 +294,17 @@ def build_trade_recommendations(
         price = prices.get(sec)
         target_shares = _target_shares(target_w, price, capital)
         current_shares = int(previous_shares.get(sec, 0))
+        action = _classify_action(prev_w, target_w)
+        if action == "HOLD" and current_shares:
+            # HOLD 不下單，股數沿用現況；否則價格變動會讓記錄的股數逐日偏離實際持股。
+            target_shares = current_shares
         delta_shares = target_shares - current_shares
         ctx = signal_context.get(sec, {})
         rows.append(
             {
                 "as_of_date": as_of_ts.date(),
                 "security_id": sec,
-                "action": _classify_action(prev_w, target_w),
+                "action": action,
                 "current_weight": prev_w,
                 "target_weight": target_w,
                 "delta_weight": delta_w,
@@ -267,6 +319,8 @@ def build_trade_recommendations(
                 "status": "PENDING",
             }
         )
+    if not rows:  # 空倉且沒有目標（例如停損期間）
+        return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(
         ["action", "delta_weight"], ascending=[True, False]
     ).reset_index(drop=True)

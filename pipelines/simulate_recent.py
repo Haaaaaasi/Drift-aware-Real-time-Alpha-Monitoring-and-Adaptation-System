@@ -80,7 +80,7 @@ from src.config.frozen_alpha_selector import load_frozen_alpha_selector
 from src.labeling.label_generator import LabelGenerator
 from src.meta_signal.ml_meta_model import MLMetaModel
 from src.portfolio.constructor import PortfolioConstructor
-from src.risk.risk_manager import RiskManager
+from src.risk.risk_manager import RiskManager, drawdown_halt_active
 
 Strategy = Literal["none", "scheduled", "triggered", "model_pool"]
 SelectorName = Literal["static_is", "rolling_topk", "legacy"]
@@ -464,6 +464,10 @@ def simulate(
     hard_exit_min_holding_days: int | None = None,
     tail_cleanup_weight: float = 0.0,
     renormalize_after_exit_cleanup: bool = False,
+    cap_empty_target_turnover: bool = False,
+    rebalance_offset: int = 0,
+    drawdown_halt: float | None = None,
+    drawdown_cooldown_days: int = 20,
     placebo_mode: Literal["none", "shuffle_signal"] = "none",
     placebo_seed: int = 0,
     similarity_threshold: float = 0.5,  # Phase B-1：對應 exp(-d/2) >= 0.5（d <= 1.4 std）
@@ -524,6 +528,15 @@ def simulate(
     exclude_indclass_cap_alphas
         排除所有需要 placeholder ``indclass`` 或 ``cap`` 的 WQ101 alpha，用於 TEJ
         真實產業分類 / 市值資料接上前的保守 ablation。
+    cap_empty_target_turnover
+        ``False``（預設）保留 frozen 行為：long-only 篩選後沒有候選時整組清倉、繞過換手上限。
+        ``True`` 時空目標仍受 ``max_turnover`` 限制。live 作業層固定採用後者。
+    rebalance_offset
+        診斷用：首次建倉後，把之後的調倉日往後平移幾個交易日。重訓與調倉都從模擬首日起算，
+        預設 0 代表調倉日與重訓日同一天；用來檢查績效對這個相位的敏感度。
+    drawdown_halt, drawdown_cooldown_days
+        回撤停損：權益自高點回落達 ``drawdown_halt`` 即清倉，空倉 ``drawdown_cooldown_days``
+        個交易日後以當時權益為新高點恢復。``None``（預設）= 不啟用，保留 frozen 行為。
     execution_price
         ``close`` 為舊 close-to-close proxy；``next_open`` / ``next_vwap`` 為 T 日收盤
         訊號、T+1 open/vwap 才成交的保守 rerun 模式。
@@ -797,6 +810,9 @@ def simulate(
     prev_weights: dict[str, float] = {}
     holding_days: dict[str, int] = {}
     last_portfolio_rebalance_idx = -10**6
+    # 停損只能看決策當下已知的權益：next_open / next_vwap 的報酬要到 T+2 才實現，多落後一日。
+    equity_lag = 1 if execution_price == "close" else 2
+    equity_obs: list[float] = []
     holdings_records: list[dict] = []
     pnl_records: list[dict] = []
     retrain_records: list[dict] = []
@@ -1085,8 +1101,20 @@ def simulate(
         held_from_prev_count = 0
         forced_sells_count = 0
         turnover_cap_applied = False
+        equity_obs.append(
+            pnl_records[-equity_lag]["cumulative_value"]
+            if len(pnl_records) >= equity_lag
+            else capital
+        )
+        halted = drawdown_halt is not None and drawdown_halt_active(
+            equity_obs, drawdown_halt, drawdown_cooldown_days
+        )
 
-        if not rebalance_due:
+        if halted:
+            current_weights = {}
+            forced_sells_count = len(prev_weights)
+            rebalance_due = False
+        elif not rebalance_due:
             tradable_secs = set(signals["security_id"].astype(str))
             current_weights = {
                 sec: weight for sec, weight in prev_weights.items() if sec in tradable_secs
@@ -1101,7 +1129,7 @@ def simulate(
             )
             held_from_prev_count = int(targets.attrs.get("held_from_prev_count", 0))
             forced_sells_count = int(targets.attrs.get("forced_sells_count", 0))
-            if targets.empty:
+            if targets.empty and not cap_empty_target_turnover:
                 current_weights = {}
             else:
                 adj = risk_mgr.apply_constraints(targets, previous_weights=prev_weights)
@@ -1110,7 +1138,9 @@ def simulate(
                     signals[["security_id", "signal_score"]], on="security_id", how="left"
                 )
                 current_weights = dict(zip(adj["security_id"].astype(str), adj["target_weight"]))
-                last_portfolio_rebalance_idx = i
+                last_portfolio_rebalance_idx = i + (
+                    rebalance_offset if last_portfolio_rebalance_idx < 0 else 0
+                )
 
         signal_lookup = signals.set_index("security_id")["signal_score"]
         current_weights, exit_metrics = _apply_exit_discipline(
@@ -1185,12 +1215,14 @@ def simulate(
         pnl_records.append({
             "date": t.strftime("%Y-%m-%d"),
             "n_holdings": len(current_weights),
+            "n_long_candidates": int((signals["signal_direction"] >= 0).sum()),
             "gross_exposure": sum(current_weights.values()),
             "execution_price": execution_price,
             "turnover": turnover,
             "buys_turnover": buys,
             "sells_turnover": sells,
             "rebalance_flag": bool(rebalance_due),
+            "drawdown_halted": bool(halted),
             "held_from_prev_count": held_from_prev_count,
             "forced_sells_count": forced_sells_count,
             "turnover_cap_applied": bool(turnover_cap_applied),
@@ -1306,6 +1338,10 @@ def simulate(
             "hard_exit_min_holding_days": hard_exit_min_holding_days,
             "tail_cleanup_weight": tail_cleanup_weight,
             "renormalize_after_exit_cleanup": renormalize_after_exit_cleanup,
+            "cap_empty_target_turnover": cap_empty_target_turnover,
+            "rebalance_offset": rebalance_offset,
+            "drawdown_halt": drawdown_halt,
+            "drawdown_cooldown_days": drawdown_cooldown_days,
             "placebo_mode": placebo_mode,
             "placebo_seed": placebo_seed,
             "trigger_ic_threshold": trigger_ic_threshold,
@@ -2053,6 +2089,29 @@ def _parse_args() -> argparse.Namespace:
         help="清掉持股後將剩餘多頭權重放大回原 gross exposure；預設保留現金以便診斷。",
     )
     p.add_argument(
+        "--cap-empty-target-turnover",
+        action="store_true",
+        help="沒有候選股時仍受 --max-turnover 限制，不整組清倉；預設關閉以重現 frozen 結果。",
+    )
+    p.add_argument(
+        "--rebalance-offset",
+        type=int,
+        default=0,
+        help="診斷用：首次建倉後，把之後的調倉日往後平移幾個交易日（相對重訓日的相位）。",
+    )
+    p.add_argument(
+        "--drawdown-halt",
+        type=float,
+        default=None,
+        help="回撤停損門檻，例如 0.2 = 權益自高點回落 20%% 即清倉；預設不啟用。",
+    )
+    p.add_argument(
+        "--drawdown-cooldown-days",
+        type=int,
+        default=20,
+        help="停損後空倉的交易日數，期滿以當時權益為新高點恢復。",
+    )
+    p.add_argument(
         "--placebo-mode",
         choices=["none", "shuffle_signal"],
         default="none",
@@ -2236,6 +2295,10 @@ def main() -> None:
         hard_exit_min_holding_days=args.hard_exit_min_holding_days,
         tail_cleanup_weight=args.tail_cleanup_weight,
         renormalize_after_exit_cleanup=args.renormalize_after_exit_cleanup,
+        cap_empty_target_turnover=args.cap_empty_target_turnover,
+        rebalance_offset=args.rebalance_offset,
+        drawdown_halt=args.drawdown_halt,
+        drawdown_cooldown_days=args.drawdown_cooldown_days,
         placebo_mode=args.placebo_mode,
         placebo_seed=args.placebo_seed,
         out_dir=args.out_dir,
