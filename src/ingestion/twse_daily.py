@@ -23,6 +23,7 @@
   （當天晚間可取得；非交易日或尚未發布回「沒有符合條件的資料」）
 - 除權息計算結果表：``exRight/TWT49U?startDate&endDate``
 - 減資恢復買賣參考價：``reducation/TWTAUU?startDate&endDate``
+- 發行量加權股價報酬指數（含息大盤 benchmark）：``TAIEX/MFI94U?date=YYYYMM01``，一次回一個月
 """
 
 from __future__ import annotations
@@ -60,6 +61,7 @@ RAW_PATH = Path("data/twse_raw_bars.parquet")
 EVENTS_PATH = Path("data/corporate_actions.parquet")
 MANUAL_EVENTS_PATH = Path("data/corporate_actions_manual.csv")
 SYNC_STATE_PATH = Path("data/twse_sync_state.json")
+TAIEX_TR_PATH = Path("data/taiex_tr.csv")
 TAIPEI = ZoneInfo("Asia/Taipei")
 RAW_COLUMNS = REQUIRED_COLUMNS + ["amount"]
 EVENT_COLUMNS = ["security_id", "ex_date", "factor", "kind", "prev_close", "ref_price", "source"]
@@ -185,6 +187,41 @@ def fetch_capital_reduction(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFr
     )
     out["factor"] = out["ref_price"] / out["prev_close"]
     return _clean_events(out)
+
+
+def fetch_taiex_total_return(
+    start: pd.Timestamp | str,
+    end: pd.Timestamp | str,
+    cache_path: str | Path = TAIEX_TR_PATH,
+    pause: float = 3.0,
+) -> pd.Series:
+    """含息大盤（MFI94U 發行量加權股價報酬指數）日收盤，index=交易日。
+
+    每月一個請求，存在 ``cache_path``；快取沒有的月份與快取最後一個月（可能只有半個月）才重抓。
+    """
+    start, end = pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize()
+    cache_path = Path(cache_path)
+    cached = (
+        pd.read_csv(cache_path, index_col=0, parse_dates=True)["taiex_tr"]
+        if cache_path.exists()
+        else pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+    )
+    have = set(cached.index.to_period("M"))
+    last = max(have) if have else None
+    todo = [m for m in pd.period_range(start, end, freq="M") if m not in have or m == last]
+    fetched: dict[pd.Timestamp, float] = {}
+    for i, month in enumerate(todo):
+        if i:
+            time.sleep(pause)
+        payload = _get_json(f"{_BASE}/TAIEX/MFI94U?date={month.strftime('%Y%m')}01&response=json")
+        for day, value in payload.get("data") or []:
+            fetched[roc_to_timestamp(day)] = _num(value)
+    if fetched:
+        cached = pd.concat([cached, pd.Series(fetched, dtype=float)])
+        cached = cached[~cached.index.duplicated(keep="last")].sort_index()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cached.rename("taiex_tr").rename_axis("date").to_csv(cache_path)
+    return cached.loc[start:end].rename("taiex_tr")
 
 
 def fetch_all_events(start: pd.Timestamp, end: pd.Timestamp, pause: float = 3.0) -> pd.DataFrame:

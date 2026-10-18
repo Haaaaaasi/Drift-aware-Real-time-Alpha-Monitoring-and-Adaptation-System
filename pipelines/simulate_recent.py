@@ -22,9 +22,11 @@
 ----
 ``reports/simulations/<run_id>/``
   * ``holdings.csv``   — 每天持倉明細（date, security_id, weight, signal_score, last_close）
-  * ``daily_pnl.csv``  — 每天組合報酬（date, gross_return, commission_cost, tax_cost,
+  * ``daily_pnl.csv``  — 每天組合報酬（date, return_date, gross_return, commission_cost, tax_cost,
     slippage_cost, net_return, cumulative_value, n_holdings, turnover,
-    rolling_ic, rolling_sharpe）
+    rolling_ic, rolling_sharpe）。``date`` 是訊號日 T（用 T 收盤以前的資料決定持股）；
+    該列報酬在 ``return_date`` 實現：``close`` 為 T+1 收盤，``next_open`` / ``next_vwap``
+    為 T+1 成交、T+2 出場，所以和外部日序列比較時要用 ``return_date`` 對齊。
   * ``retrain_log.csv`` — 每次重訓紀錄（date, reason, n_train, train_ic, train_rank_ic）
   * ``summary.txt``    — 累積報酬 / 年化 / Sharpe / Max DD / Win rate / 平均持倉數 / 重訓次數
 
@@ -364,6 +366,24 @@ def _next_day_returns(
         )
     bars_sorted["next_return"] = bars_sorted["exit_price"] / bars_sorted["entry_price"] - 1
     return bars_sorted.set_index(["security_id", "tradetime"])[["next_return"]]
+
+
+def _return_dates(
+    bars: pd.DataFrame,
+    execution_price: Literal["close", "next_open", "next_vwap"] = "close",
+) -> dict[pd.Timestamp, str | None]:
+    """訊號日 T → ``_next_day_returns`` 那筆報酬實現（出場價所在）的交易日。
+
+    ``close`` 是 T+1，``next_open`` / ``next_vwap`` 是 T+2。資料最後幾天沒有出場價，
+    報酬在模擬裡記 0，這裡對應 ``None``。與外部日報酬序列（例如大盤指數）比較時要對齊這一欄，
+    不是 ``date``。
+    """
+    days = pd.to_datetime(bars["tradetime"]).dt.normalize().drop_duplicates().sort_values()
+    realized = days.shift(-(1 if execution_price == "close" else 2))
+    return {
+        day: (None if pd.isna(when) else when.strftime("%Y-%m-%d"))
+        for day, when in zip(days, realized)
+    }
 
 
 def _filter_universe(
@@ -786,6 +806,7 @@ def simulate(
     label_avail = labels_h["label_available_at"]
 
     next_ret = _next_day_returns(bars, execution_price=execution_price)
+    return_dates = _return_dates(bars, execution_price=execution_price)
     last_close_lookup = bars.set_index(["security_id", "tradetime"])["close"]
 
     sim_days = _trading_days(bars, start, end)
@@ -1227,6 +1248,7 @@ def simulate(
             "forced_sells_count": forced_sells_count,
             "turnover_cap_applied": bool(turnover_cap_applied),
             **exit_metrics,
+            "return_date": return_dates.get(t),
             "gross_return": gross_return,
             "commission_cost": commission_cost,
             "tax_cost": tax_cost,
