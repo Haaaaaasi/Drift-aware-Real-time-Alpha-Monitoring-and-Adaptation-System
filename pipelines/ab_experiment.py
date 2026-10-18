@@ -49,6 +49,7 @@ from pipelines.simulate_recent import (
     _git_metadata,
     _infer_data_source,
     _next_day_returns,
+    _return_dates,
     _summarize,
     _trading_days,
     simulate,
@@ -58,6 +59,7 @@ from src.common.logging import get_logger, setup_logging
 from src.config.alpha_selection import EFFECTIVE_ALPHAS_PATH
 from src.config.constants import DATA_SOURCE_DEFAULT_PATHS, DEFAULT_DATA_SOURCE
 from src.config.frozen_alpha_selector import load_frozen_alpha_selector
+from src.ingestion.twse_daily import fetch_taiex_total_return
 
 setup_logging()
 logger = get_logger("ab_experiment")
@@ -348,9 +350,22 @@ def run_ab_experiment(
             run_dir=run_dir,
             allow_yfinance=allow_yfinance,
         )
+    elif benchmark == "taiex_tr":
+        benchmark_result = _run_taiex_tr_benchmark(
+            csv_path=csv_path,
+            start=start,
+            end=end,
+            capital=capital,
+            execution_price=execution_price,
+            symbols=symbols,
+            min_turnover_ntd=min_turnover_ntd,
+            run_dir=run_dir,
+            allow_yfinance=allow_yfinance,
+        )
+    if benchmark_result is not None:
         bm = benchmark_result["summary_metrics"]
         compare_rows.append({
-            "strategy": "ew_buy_hold_universe",
+            "strategy": benchmark,
             "n_retrains": 0,
             "cumulative_return_pct": bm.get("cumulative_return_pct", 0.0),
             "annualized_return_pct": bm.get("annualized_return_pct", 0.0),
@@ -516,6 +531,7 @@ def _run_ew_buy_hold_benchmark(
     weight = 1.0 / len(initial)
     weights = {sec: weight for sec in initial}
     next_ret = _next_day_returns(bars, execution_price=execution_price)
+    return_dates = _return_dates(bars, execution_price=execution_price)
     portfolio_value = capital
     records: list[dict] = []
 
@@ -550,6 +566,7 @@ def _run_ew_buy_hold_benchmark(
             "held_from_prev_count": len(weights) if i > 0 else 0,
             "forced_sells_count": 0,
             "turnover_cap_applied": False,
+            "return_date": return_dates.get(t),
             "gross_return": gross_return,
             "commission_cost": commission_cost,
             "tax_cost": tax_cost,
@@ -560,13 +577,58 @@ def _run_ew_buy_hold_benchmark(
             "rolling_sharpe": np.nan,
         })
 
+    return _write_benchmark(pd.DataFrame(records), "ew_buy_hold_universe", run_dir, capital)
+
+
+def _run_taiex_tr_benchmark(
+    *,
+    csv_path: str | Path,
+    start: date,
+    end: date,
+    capital: float,
+    execution_price: str,
+    symbols: list[str] | None,
+    min_turnover_ntd: float,
+    run_dir: Path,
+    allow_yfinance: bool,
+) -> dict:
+    """含息大盤（證交所 MFI94U 發行量加權股價報酬指數）買進持有，不計成本。
+
+    每列取該列 ``return_date`` 當天的指數日報酬，所以與策略同一列比的是同一段市場區間；
+    ``return_date`` 為空（資料邊界、策略記 0）的列同樣記 0。
+    """
+    bars = load_csv_data(csv_path, allow_yfinance=allow_yfinance)
+    bars["security_id"] = bars["security_id"].astype(str)
+    bars, _ = _filter_universe(bars, symbols, min_turnover_ntd, start)
+    days = _trading_days(bars, start, end)
+    if not days:
+        raise RuntimeError("benchmark window has no trading days")
+    return_dates = _return_dates(bars, execution_price=execution_price)
+    realized = pd.to_datetime(pd.Series([return_dates.get(t) for t in days]))
+    index = fetch_taiex_total_return(days[0], realized.max())
+    missing = realized.dropna()[~realized.dropna().isin(index.index)]
+    if not missing.empty:
+        raise RuntimeError(f"MFI94U 缺 {len(missing)} 個交易日，例如 {missing.iloc[0]:%Y-%m-%d}")
+    net = index.pct_change().reindex(realized).fillna(0.0).to_numpy()
+    pnl_df = pd.DataFrame({
+        "date": [t.strftime("%Y-%m-%d") for t in days],
+        "return_date": [return_dates.get(t) for t in days],
+        "n_holdings": 1,
+        "turnover": 0.0,
+        "gross_return": net,
+        "net_return": net,
+        "cumulative_value": capital * np.cumprod(1.0 + net),
+    })
+    return _write_benchmark(pnl_df, "taiex_tr", run_dir, capital)
+
+
+def _write_benchmark(pnl_df: pd.DataFrame, name: str, run_dir: Path, capital: float) -> dict:
     bench_dir = run_dir / "benchmarks"
     bench_dir.mkdir(parents=True, exist_ok=True)
-    pnl_df = pd.DataFrame(records)
-    daily_path = bench_dir / "ew_buy_hold_universe_daily_pnl.csv"
+    daily_path = bench_dir / f"{name}_daily_pnl.csv"
     pnl_df.to_csv(daily_path, index=False)
     summary = _summarize(pnl_df, capital)
-    summary_path = bench_dir / "ew_buy_hold_universe_summary.json"
+    summary_path = bench_dir / f"{name}_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     return {
         "daily_pnl_path": str(daily_path),
@@ -1038,9 +1100,12 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--benchmark",
-        choices=["none", "ew_buy_hold_universe"],
+        choices=["none", "ew_buy_hold_universe", "taiex_tr"],
         default="none",
-        help="Optional benchmark row to append to comparison.csv.",
+        help=(
+            "Optional benchmark row to append to comparison.csv; taiex_tr = 證交所含息大盤 "
+            "MFI94U（快取 data/taiex_tr.csv，缺的月份會連網補抓）。"
+        ),
     )
     p.add_argument("--purge-days", type=int, default=5)
     p.add_argument("--horizon-days", type=int, default=5)
